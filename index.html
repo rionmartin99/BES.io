@@ -728,6 +728,7 @@
             <!-- Standard Leg Gaits -->
             <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="STAND">🦵 Stand</button>
             <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="WALK_FWD">🚶 Walk</button>
+            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="RUN">🏃 Run</button>
             <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="WAVE">👋 Wave</button>
             <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="REST">😴 Rest</button>
         </div>
@@ -2286,6 +2287,13 @@
                     { l: 90, r: 90, ms: 240 },
                     { l: 55, r: 55, ms: 280 },
                     { l: 90, r: 90, ms: 240 }
+                ],
+                // Run: Swing-To Gait (both crutches forward, drag body)
+                RUN_CYCLE: [
+                    { l: 35, r: 35, ms: 140 },
+                    { l: 90, r: 90, ms: 120 },
+                    { l: 140, r: 140, ms: 140 },
+                    { l: 90, r: 90, ms: 120 }
                 ],
                 // Remapped Turn Left: Uses pivot gait (old Walk)
                 TURN_LEFT: [
@@ -5122,7 +5130,7 @@
             if (legCmd) {
                 const sent = await sendBLECommand(legCmd);
                 const legNames = {
-                    STAND:'standing up', SIT:'sitting down', WALK_FWD:'walking forward',
+                    STAND:'standing up', SIT:'sitting down', WALK_FWD:'walking forward', RUN:'running',
                     WALK_BWD:'walking backward', TURN_L:'turning left', TURN_R:'turning right',
                     WAVE:'waving', DANCE:'dancing', REST:'resting'
                 };
@@ -6448,6 +6456,7 @@ ${getActiveMemoriesPrompt()}`;
             if (/\b(stand up|get up|stand|rise|on your feet|upright)\b/.test(l))   return 'STAND';
             if (/\b(sit down|sit|lower yourself|crouch)\b/.test(l))                return 'SIT';
             if (/\b(walk forward|go forward|move forward|advance|step forward)\b/.test(l)) return 'WALK_FWD';
+            if (/\b(run|sprint|dash|go fast)\b/.test(l))                           return 'RUN';
             if (/\b(walk back(ward)?|go back|retreat|step back)\b/.test(l))        return 'WALK_BWD';
             if (/\b(turn left|go left|rotate left)\b/.test(l))                     return 'TURN_R';
             if (/\b(turn right|go right|rotate right)\b/.test(l))                  return 'TURN_L';
@@ -7934,7 +7943,7 @@ ${getActiveMemoriesPrompt()}`;
             } else if (legCmd) {
                 sendBLECommand(legCmd).then(sent => {
                     const legNames = {
-                        STAND:'Standing up!', SIT:'Sitting down.', WALK_FWD:'Walking forward!',
+                        STAND:'Standing up!', SIT:'Sitting down.', WALK_FWD:'Walking forward!', RUN:'Running!',
                         WALK_BWD:'Walking backward!', TURN_L:'Turning left!', TURN_R:'Turning right!',
                         WAVE:'Waving!', DANCE:'Dancing!', REST:'Resting my legs.'
                     };
