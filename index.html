@@ -2290,7 +2290,7 @@
                 ],
                 // Run: Swing-To Gait (both crutches forward, drag body)
                 RUN_CYCLE: [
-                    { l: 35, r: 35, ms: 140 },
+                    { l: 15, r: 15, ms: 140 }, // Farther reaching forward
                     { l: 90, r: 90, ms: 120 },
                     { l: 140, r: 140, ms: 140 },
                     { l: 90, r: 90, ms: 120 }
@@ -5818,7 +5818,7 @@ ${getActiveMemoriesPrompt()}`;
             if (wakeScannerActive) {
                 playSound('chirp');
                 log('🎙️ Wake word detection ENABLED ("Hey Bes" / "Bes").', 'SYS');
-                showSpeechBubble('Wake word ON! Say "Hey Bes" anytime! ✨');
+                showSpeechBubble('Wake word ON! Say "Hey Bes", "Wake up Bes", or "Hello Bes" anytime! 🎤');
                 startWakeWordScanner();
             } else {
                 playSound('blip');
