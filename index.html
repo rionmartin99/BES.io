@@ -1,11 +1,12 @@
 <!-- 
-  BES Living Robot Core | Version: 3.9.8
+  BES Living Robot Core | Version: 4.0.1
   Change Log:
+  [Aug 27, 2026 07:37 AM] Feature: 1-shot face registration at first-boot introduction — BES counts down, captures face embedding, and greets user by name on sight.
+  [Aug 27, 2026 07:30 AM] Fix+Feature: Mic spectrum visualizer, STT mobile fix, selfie-cam gaze inversion fix, TARS/ape D-Pad gaits, awakening overlap guard + self-intro step, expanded touch dialogue, back buttons on control pages.
   [Aug 22, 2026 10:34 PM] Fix: Removed manual right leg inversion from Puppet Mode since it is now handled identically across all modes directly by the ESP32 hardware driver.
   [Aug 22, 2026 10:20 PM] Fix: Corrected case sensitivity of sendBleCommand to sendBLECommand in balance control loop to ensure robot legs are actuated.
   [Aug 22, 2026 5:18 PM] Fix: Resolved critical ReferenceError (missing toggleMicDisabled/cancelOfflineDownload) that crashed the script on load and broke all button onclick handlers.
   [Aug 22, 2026 5:15 PM] Fix: Overhauled Puppet slider drag engine with touch/pointer coordinates, NaN protection, window drag tracking, and hardened all modal and settings button bindings.
-  [Aug 22, 2026 4:22 PM] Fix: Fixed D-Pad access from Puppet mode with elevated z-[60], wired Puppet & D-Pad close handlers, and restored Camera & Push-to-Talk buttons with pointer-capture long-press engine.
 -->
 
 <!DOCTYPE html>
@@ -677,11 +678,15 @@
                     <span id="label-cam-bar" class="text-[7px] font-extrabold leading-none mt-0.5 text-teal-300 font-mono-code pointer-events-none">FRONT</span>
                 </button>
 
+
                 <!-- Microphone Voice Input Button (Hold to Talk / Tap to Toggle Listen) -->
-                <button id="btn-voice-bar" class="flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm select-none" title="Hold to Talk | Tap to Toggle Listen (Hold 2s to Disable)">
-                    <i id="icon-voice-bar" class="ph-bold ph-microphone text-teal-400 text-sm xs:text-base pointer-events-none"></i>
-                    <span id="label-voice-bar" class="text-[7px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code pointer-events-none">MIC</span>
+                <button id="btn-voice-bar" class="flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm select-none relative overflow-hidden" title="Hold to Talk | Tap to Toggle Listen (Hold 2s to Disable)">
+                    <!-- Mic Spectrum Visualizer Canvas (behind icon) -->
+                    <canvas id="mic-spectrum-canvas" width="38" height="40" class="absolute inset-0 w-full h-full opacity-0 transition-opacity duration-300 pointer-events-none rounded-xl" style="mix-blend-mode: screen;"></canvas>
+                    <i id="icon-voice-bar" class="ph-bold ph-microphone text-teal-400 text-sm xs:text-base pointer-events-none relative z-10"></i>
+                    <span id="label-voice-bar" class="text-[7px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code pointer-events-none relative z-10">MIC</span>
                 </button>
+
 
                 <!-- Wake Word Scanner Button -->
                 <button id="btn-wake-bar" onclick="toggleWakeScanner()" class="flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm" title="Toggle Wake-Word Scanner">
@@ -848,12 +853,18 @@
 
         <!-- Header -->
         <div class="flex items-center justify-between px-4 py-2.5 bg-slate-900/95 border-b border-violet-500/30 flex-shrink-0">
-            <div class="flex items-center gap-2">
-                <i class="ph-bold ph-game-controller text-violet-400 text-lg"></i>
-                <span class="text-xs sm:text-sm font-black text-violet-300 tracking-widest uppercase">Puppet Mode</span>
-                <span id="puppet-ble-indicator" class="text-[9px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono-code font-bold ml-1">BLE OFF</span>
+            <div class="flex items-center gap-2 min-w-0">
+                <!-- Back to Main -->
+                <button onclick="closePuppetMode()" class="flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 text-xs font-bold rounded-lg border border-slate-700 cursor-pointer transition-all flex-shrink-0" title="Back to BES">
+                    <i class="ph-bold ph-arrow-left text-sm"></i>
+                    <span class="hidden xs:inline">BES</span>
+                </button>
+                <i class="ph-bold ph-game-controller text-violet-400 text-lg flex-shrink-0"></i>
+                <span class="text-xs sm:text-sm font-black text-violet-300 tracking-widest uppercase truncate">Puppet Mode</span>
+                <span id="puppet-ble-indicator" class="text-[9px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono-code font-bold ml-1 flex-shrink-0">BLE OFF</span>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1.5 flex-shrink-0">
+
                 <!-- Balance Mode Quick Access -->
                 <button id="btn-open-balance-puppet" onclick="closePuppetMode(); openBalanceMode()" class="px-2.5 py-1.5 bg-orange-800/80 hover:bg-orange-700 active:scale-95 text-orange-200 border border-orange-500/40 text-[11px] font-black rounded-xl flex items-center gap-1.5 cursor-pointer transition-all shadow" title="Balance Mode">
                     <i class="ph-bold ph-scales text-orange-300"></i>
@@ -1026,12 +1037,18 @@
         
         <!-- Header -->
         <div class="flex items-center justify-between px-4 py-2.5 bg-slate-900/95 border-b border-orange-500/30 flex-shrink-0">
-            <div class="flex items-center gap-2">
-                <i class="ph-bold ph-scales text-orange-400 text-lg"></i>
-                <span class="text-xs sm:text-sm font-black text-orange-300 tracking-widest uppercase">Balance Mode</span>
-                <span id="balance-ble-indicator" class="text-[9px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono-code font-bold ml-1">BLE OFF</span>
+            <div class="flex items-center gap-2 min-w-0">
+                <!-- Back to Main -->
+                <button onclick="closeBalanceMode()" class="flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 text-xs font-bold rounded-lg border border-slate-700 cursor-pointer transition-all flex-shrink-0" title="Back to BES">
+                    <i class="ph-bold ph-arrow-left text-sm"></i>
+                    <span class="hidden xs:inline">BES</span>
+                </button>
+                <i class="ph-bold ph-scales text-orange-400 text-lg flex-shrink-0"></i>
+                <span class="text-xs sm:text-sm font-black text-orange-300 tracking-widest uppercase truncate">Balance Mode</span>
+                <span id="balance-ble-indicator" class="text-[9px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono-code font-bold ml-1 flex-shrink-0">BLE OFF</span>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-shrink-0">
+
                 <!-- Puppet Mode Quick Access -->
                 <button id="btn-open-puppet-balance" onclick="closeBalanceMode(); openPuppetMode()" class="px-2.5 py-1.5 bg-violet-800/80 hover:bg-violet-700 active:scale-95 text-violet-200 border border-violet-500/40 text-[11px] font-black rounded-xl flex items-center gap-1.5 cursor-pointer transition-all shadow" title="Puppet Mode">
                     <i class="ph-bold ph-game-controller text-violet-300"></i>
@@ -1720,6 +1737,8 @@
         let lastGatePassedTime = 0;
         let isCameraOnline = false;
         let lastCocoInferenceTime = 0;
+        let awaitingNameIntroduction = false; // True when BES is waiting for user name after awakening
+
 
         let sensorData = {
             accel: { x: 0, y: 0, z: 0 },
@@ -2019,15 +2038,33 @@
             showSpeechBubble(reply);
             speakSafe(reply);
 
+            // Guard against TTS overlap on mobile: wait for speech to finish + extra buffer
+            const ttsDelay = (() => {
+                // Estimate speech duration: ~80ms per character, min 2500ms, max 5500ms on mobile
+                const estMs = Math.max(2500, Math.min(5500, reply.length * 80));
+                // Add extra 1200ms buffer for mobile TTS startup latency
+                return estMs + 1200;
+            })();
+
             setTimeout(() => {
-                isGateBusy = false;
-                currentGateIdx++;
-                if (currentGateIdx >= SENSORY_GATES.length) {
-                    passGateAll();
-                } else {
-                    runSensoryGate();
-                }
-            }, 3000);
+                // Double-check TTS is not still running before proceeding
+                const advanceGate = () => {
+                    if (window.speechSynthesis && window.speechSynthesis.speaking) {
+                        // Still speaking — wait another 600ms and retry
+                        setTimeout(advanceGate, 600);
+                        return;
+                    }
+                    isGateBusy = false;
+                    currentGateIdx++;
+                    if (currentGateIdx >= SENSORY_GATES.length) {
+                        passGateAll();
+                    } else {
+                        runSensoryGate();
+                    }
+                };
+                advanceGate();
+            }, ttsDelay);
+
         }
 
         function skipSensoryGate() {
@@ -2069,7 +2106,7 @@
             // Trigger embodied happy keyframe choreography
             KeyframeSequenceEngine.playSequence(KeyframeSequenceEngine.PRESETS.HAPPY_WIGGLE, { name: "BIRTH_CELEBRATION" });
 
-            const graduationMsg = "All my senses are fully awake! I can touch, move, see, and hear you now. I am ready to live and explore the world with you! ✨❤️";
+            const graduationMsg = "All my senses are fully awake! I can touch, move, see, and hear you now. I am born! ✨❤️";
             showSpeechBubble(graduationMsg);
             speakSafe(graduationMsg);
 
@@ -2083,8 +2120,38 @@
             try { restoreAmbientCircadianAura(); } catch(e){}
             try { startIdleThoughtLoop(); } catch(e){}
             log('🎉 [Sensory Birth Complete] BES has graduated into Life Stage 1: Infancy & Wonder!', 'AI');
+
+            // === SELF-INTRODUCTION STEP ===
+            // After graduation, BES asks for the user's name and stores it in memory.
+            // Check if we already have a name stored to avoid asking again.
+            const existingName = aionaMemories.find(m => m && m.toLowerCase && m.toLowerCase().includes("user's name is"));
+            if (!existingName) {
+                awaitingNameIntroduction = true;
+                const introDelay = graduationMsg.length * 80 + 2500; // Wait for graduation speech
+                setTimeout(() => {
+                    if (!awaitingNameIntroduction) return;
+                    const introMsg = "And now... who are you, my first friend? Please tell me your name so I can remember you forever! 🥰";
+                    showSpeechBubble(introMsg);
+                    speakSafe(introMsg);
+                    setEmotion('CURIOUS');
+                    setAura('aura-listening', 12000);
+                    // Highlight the mic button to prompt voice input
+                    const barBtn = document.getElementById('btn-voice-bar');
+                    if (barBtn) {
+                        barBtn.classList.add('ring-2', 'ring-amber-400', 'animate-pulse');
+                        setTimeout(() => barBtn.classList.remove('ring-2', 'ring-amber-400', 'animate-pulse'), 12000);
+                    }
+                    // Start listening for the name after intro speech
+                    setTimeout(() => {
+                        if (awaitingNameIntroduction) {
+                            try { startActiveSpeechRecognition(); } catch(e){}
+                        }
+                    }, introMsg.length * 80 + 1500);
+                }, introDelay);
+            }
         }
         window.passGateAll = passGateAll;
+
 
         function restartSensoryBirthRitual() {
             closeSettingsModal();
@@ -2248,6 +2315,7 @@
                 if (!Array.isArray(steps) || steps.length === 0) return false;
                 const mode = options.mode || 'replace';
                 const choreoName = options.name || 'CHOREOGRAPHY';
+                const uiOnly = options.uiOnly || false;
 
                 if (mode === 'replace') {
                     this.stopSequence(false);
@@ -2260,12 +2328,6 @@
                     ms: Math.max(80, Math.min(3000, Math.round(s.ms || 300)))
                 }));
 
-                // 1. Hardware Pipeline: Send STEPS:l,r,ms;... over BLE with Right Servo Inversion
-                if (bleConnected) {
-                    const blePayload = "STEPS:" + sanitized.map(s => `${s.l},${180 - s.r},${s.ms}`).join(';');
-                    sendBLECommand(blePayload);
-                }
-
                 // 2. UI Smoothstep Interpolation Pipeline
                 this.isPlaying = true;
                 lastLegCommand = choreoName;
@@ -2273,7 +2335,16 @@
                 let cumulativeTime = 0;
                 sanitized.forEach((step, idx) => {
                     setTimeout(() => {
-                        updatePuppetVisuals(step.l, step.r);
+                        if (uiOnly) {
+                            updatePuppetVisuals(step.l, step.r);
+                        } else {
+                            // Hardware Pipeline: Send PUPPET commands sequentially
+                            if (typeof sendPuppetLegs === 'function') {
+                                sendPuppetLegs(step.l, step.r, true);
+                            } else {
+                                updatePuppetVisuals(step.l, step.r);
+                            }
+                        }
                         const slL = document.getElementById('slider-left-leg');
                         const slR = document.getElementById('slider-right-leg');
                         if (slL) slL.value = step.l;
@@ -3575,10 +3646,8 @@
                         let normX = (targetX - vw * 0.5) / (vw * 0.5);
                         let normY = (targetY - vh * 0.5) / (vh * 0.5);
 
-                        // Mirror horizontal axis if front (selfie) camera is active
-                        if (currentFacingMode === 'user') {
-                            normX = -normX;
-                        }
+                        // NOTE: Front (selfie) camera on mobile already delivers bbox coords in display space —
+                        // no extra flip needed. The invertGazeX setting is available for manual override.
 
                         // User Gaze Field of Vision Inversion Settings (applied strictly to gaze)
                         if (invertGazeX) {
@@ -3621,9 +3690,7 @@
                                     let normX = (targetX - vw * 0.5) / (vw * 0.5);
                                     let normY = (targetY - vh * 0.5) / (vh * 0.5);
 
-                                    if (currentFacingMode === 'user') {
-                                        normX = -normX;
-                                    }
+                                    // NOTE: Front camera gaze flip removed — bbox coords already in correct display space.
                                     if (invertGazeX) {
                                         normX = -normX;
                                     }
@@ -5471,6 +5538,9 @@ ${getActiveMemoriesPrompt()}`;
         let micAudioCtx = null;
         let micAnalyser = null;
         let micBuf = null;
+        let micSpectrumBuf = null;    // Frequency data buffer for spectrum visualization
+        let micSpectrumRaf = null;    // requestAnimationFrame handle for spectrum loop
+        let micSpectrumActive = false;// Whether the spectrum canvas is currently animating
 
         async function initMicrophoneEar() {
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
@@ -5478,18 +5548,77 @@ ${getActiveMemoriesPrompt()}`;
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
                 const AC = window.AudioContext || window.webkitAudioContext;
                 micAudioCtx = new AC();
+
+                // Resume audio context on mobile (requires user gesture — already inside bootPhoneBotCore)
+                if (micAudioCtx.state === 'suspended') {
+                    try { await micAudioCtx.resume(); } catch(e){}
+                }
+
                 const src = micAudioCtx.createMediaStreamSource(stream);
                 micAnalyser = micAudioCtx.createAnalyser();
                 micAnalyser.fftSize = 1024;
+                micAnalyser.smoothingTimeConstant = 0.75;
                 src.connect(micAnalyser);
                 micBuf = new Float32Array(micAnalyser.fftSize);
+                micSpectrumBuf = new Uint8Array(micAnalyser.frequencyBinCount);
 
                 setInterval(sampleMicrophonePitch, 250);
+                startMicSpectrumLoop();
                 log('Microphone ear connected to acoustic analyzer.', 'SYS');
             } catch (err) {
                 log(`Microphone notice: ${err.message}`, 'SYS');
             }
         }
+
+        // Spectrum canvas animation — renders a mini waveform inside the mic button
+        function startMicSpectrumLoop() {
+            const canvas = document.getElementById('mic-spectrum-canvas');
+            if (!canvas || !micAnalyser || !micSpectrumBuf) return;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+
+            function drawSpectrum() {
+                micSpectrumRaf = requestAnimationFrame(drawSpectrum);
+                const isActive = isHoldingVoice || autoListenActive || listenModeActive || isSttListening;
+
+                // Show/hide canvas based on mic activity
+                canvas.style.opacity = isActive ? '1' : '0';
+
+                if (!isActive) return;
+
+                micAnalyser.getByteFrequencyData(micSpectrumBuf);
+
+                const W = canvas.width;
+                const H = canvas.height;
+                ctx.clearRect(0, 0, W, H);
+
+                // Draw 7 frequency bars across the button
+                const barCount = 7;
+                const barW = Math.floor(W / barCount) - 1;
+                const step = Math.floor(micSpectrumBuf.length / barCount / 4); // focus on low-mid frequencies
+
+                // Determine color based on voice hold vs auto-listen
+                const barColor = isHoldingVoice
+                    ? 'rgba(251, 113, 133, 0.85)'   // rose for hold-to-talk
+                    : 'rgba(52, 211, 153, 0.85)';   // emerald for auto-listen
+
+                for (let i = 0; i < barCount; i++) {
+                    const val = micSpectrumBuf[i * step + 4] / 255;
+                    const barH = Math.max(3, Math.round(val * H * 0.88));
+                    const x = i * (barW + 1) + 1;
+                    const y = H - barH;
+
+                    // Rounded bar
+                    ctx.beginPath();
+                    ctx.roundRect ? ctx.roundRect(x, y, barW, barH, 2) : ctx.rect(x, y, barW, barH);
+                    ctx.fillStyle = barColor;
+                    ctx.fill();
+                }
+            }
+            drawSpectrum();
+        }
+
+
 
         function sampleMicrophonePitch() {
             if (!micAnalyser || !micBuf) return;
@@ -5843,9 +5972,148 @@ ${getActiveMemoriesPrompt()}`;
                 return;
             }
 
+            // === Handle Self-Introduction Step (Post-Awakening Name Collection) ===
+            if (awaitingNameIntroduction) {
+                awaitingNameIntroduction = false;
+                // Extract just a name: take the first 1-3 words from the response
+                let userName = cleanText.replace(/^(i'm|i am|my name is|call me|they call me|name's|hi i'm|hi i am|hello i'm|it's|its)\s+/i, '').trim();
+                // Capitalize first letter of each word, take max 3 words
+                userName = userName.split(' ').slice(0, 3).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+
+                if (userName.length > 0 && userName.length <= 40) {
+                    // Store name in memory
+                    const nameMemory = `User's name is ${userName}. They are BES's very first and most important friend.`;
+                    saveAionaMemory(nameMemory);
+
+                    // Warm welcome response
+                    const welcomeMsg = `${userName}! What a beautiful name! I will remember you always, ${userName}. Hold still — I want to see your face so I can recognize you forever! 📸`;
+                    showSpeechBubble(welcomeMsg);
+                    speakSafe(welcomeMsg);
+                    setEmotion('EXCITED');
+                    setEyeSparkle(true);
+                    playSound('fanfare');
+                    setAura('aura-warm', 8000);
+                    log(`💾 [Memory] User introduced as: "${userName}"`, 'AI');
+                    recordInteractionProgress(2);
+
+                    // === 1-SHOT FACE REGISTRATION SEQUENCE ===
+                    // BES takes a face snapshot right after the introduction for instant recognition.
+                    const faceEnrollDelay = welcomeMsg.length * 75 + 1500;
+                    setTimeout(async () => {
+                        // Show countdown overlay on the face screen
+                        const showCountdown = (n) => {
+                            const msg = n > 0
+                                ? `📸 Looking at you, ${userName}... ${n}`
+                                : `📸 Got it! Memorizing your face now...`;
+                            showSpeechBubble(msg);
+                            // Glow the camera button to signal focus
+                            const camBtn = document.getElementById('btn-flip-cam-bar');
+                            if (camBtn) {
+                                camBtn.classList.add('ring-2', 'ring-teal-400');
+                                setTimeout(() => camBtn.classList.remove('ring-2', 'ring-teal-400'), 800);
+                            }
+                        };
+
+                        // 3-second face-focus countdown
+                        showCountdown(3);
+                        await new Promise(r => setTimeout(r, 1000));
+                        showCountdown(2);
+                        await new Promise(r => setTimeout(r, 1000));
+                        showCountdown(1);
+                        await new Promise(r => setTimeout(r, 1000));
+                        showCountdown(0);
+
+                        // Attempt enrollment — ensure face model is loaded first
+                        try {
+                            if (!faceApiModelLoaded) {
+                                await loadFaceApiModel();
+                            }
+                        } catch(e) {}
+
+                        try {
+                            // Ensure camera is running
+                            if (!camStream) await initCamera();
+
+                            const video = document.getElementById('camera-feed');
+                            if (video && video.videoWidth && faceApiModelLoaded) {
+                                // Flash effect: briefly darken/brighten the face to simulate shutter
+                                const faceEl = document.getElementById('bes-face-container');
+                                if (faceEl) {
+                                    faceEl.style.transition = 'filter 0.08s ease';
+                                    faceEl.style.filter = 'brightness(3) saturate(0)';
+                                    setTimeout(() => { faceEl.style.filter = ''; }, 120);
+                                }
+                                playSound('chirp');
+
+                                const detection = await faceapi
+                                    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.35 }))
+                                    .withFaceLandmarks()
+                                    .withFaceDescriptor();
+
+                                if (detection && detection.descriptor) {
+                                    const descriptorArray = Array.from(detection.descriptor);
+
+                                    // Save to enrolledFaces (overwrite if name exists)
+                                    const existingIdx = enrolledFaces.findIndex(f => f.name.toLowerCase() === userName.toLowerCase());
+                                    if (existingIdx >= 0) {
+                                        enrolledFaces[existingIdx].descriptor = descriptorArray;
+                                        enrolledFaces[existingIdx].updatedAt = new Date().toLocaleDateString();
+                                    } else {
+                                        enrolledFaces.push({
+                                            id: 'face_' + Date.now(),
+                                            name: userName,
+                                            descriptor: descriptorArray,
+                                            createdAt: new Date().toLocaleDateString(),
+                                            isFirstFriend: true
+                                        });
+                                    }
+                                    setStorage('bes_known_faces', JSON.stringify(enrolledFaces));
+                                    renderEnrolledFacesUI();
+
+                                    const successMsg = `I see you now, ${userName}! 👁️✨ I have memorized your face. Next time I see you, I'll call you by name right away!`;
+                                    showSpeechBubble(successMsg);
+                                    speakSafe(successMsg);
+                                    setEmotion('HAPPY');
+                                    setEyeSparkle(true);
+                                    playSound('fanfare');
+                                    log(`👤 [1-Shot Face ID] Enrolled "${userName}" at introduction (128-D embedding saved).`, 'AI');
+                                } else {
+                                    // No face detected — ask to try again from Settings
+                                    const failMsg = `Hmm, I couldn't quite see your face clearly. You can enroll it later from Settings! I still know your name, ${userName}! 💖`;
+                                    showSpeechBubble(failMsg);
+                                    speakSafe(failMsg);
+                                    setEmotion('CURIOUS');
+                                    log(`⚠️ [1-Shot Face ID] No face detected during intro enrollment for "${userName}".`, 'SYS');
+                                }
+                            } else {
+                                // Camera not ready — store name but skip face
+                                const skipMsg = `Camera wasn't ready, but I still know your name, ${userName}! You can add your face later in Settings. 💖`;
+                                showSpeechBubble(skipMsg);
+                                speakSafe(skipMsg);
+                                setEmotion('HAPPY');
+                            }
+                        } catch(err) {
+                            log(`[1-Shot Face Enroll] Error: ${err.message}`, 'ERR');
+                            const errMsg = `Something went a little wrong with the camera, ${userName}, but I know your name and that's what matters! 💖`;
+                            showSpeechBubble(errMsg);
+                            speakSafe(errMsg);
+                        }
+                    }, faceEnrollDelay);
+
+                } else {
+                    // Couldn't parse name clearly — respond warmly and move on
+                    const confusedMsg = "Oh! I didn't quite catch that, but that's okay! You can tell me your name anytime in our chat. Welcome, dear friend! 💖";
+                    showSpeechBubble(confusedMsg);
+                    speakSafe(confusedMsg);
+                    setEmotion('HAPPY');
+                }
+                return;
+            }
+
             recordInteractionProgress();
             triggerCognitionLoop(cleanText);
         }
+
 
         function toggleVoiceRecording() {
             toggleAutoListenMode();
@@ -5862,32 +6130,32 @@ ${getActiveMemoriesPrompt()}`;
                 if (vLabel) vLabel.innerText = "HEARING...";
                 if (vBtn) vBtn.className = "px-3 py-1.5 bg-rose-500 text-white font-bold rounded-xl flex items-center space-x-1 animate-pulse shadow-md shadow-rose-500/40 cursor-pointer";
                 if (barBtn) {
-                    barBtn.className = "flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-rose-500 hover:bg-rose-400 active:scale-95 border border-rose-400 rounded-xl text-white cursor-pointer transition-all flex-shrink-0 shadow-md shadow-rose-500/40 animate-pulse";
+                    barBtn.className = "flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-rose-500 hover:bg-rose-400 active:scale-95 border border-rose-400 rounded-xl text-white cursor-pointer transition-all flex-shrink-0 shadow-md shadow-rose-500/40 animate-pulse relative overflow-hidden";
                 }
-                if (barIcon) barIcon.className = "ph-bold ph-waveform text-white text-sm xs:text-base pointer-events-none";
+                if (barIcon) barIcon.className = "ph-bold ph-waveform text-white text-sm xs:text-base pointer-events-none relative z-10";
                 if (barLabel) {
                     barLabel.innerText = "HEARING";
-                    barLabel.className = "text-[7px] font-extrabold leading-none mt-0.5 text-white font-mono-code pointer-events-none";
+                    barLabel.className = "text-[7px] font-extrabold leading-none mt-0.5 text-white font-mono-code pointer-events-none relative z-10";
                 }
             } else if (autoListenActive || listenModeActive) {
                 if (vLabel) vLabel.innerText = "AUTO ON";
                 if (vBtn) vBtn.className = "px-3 py-1.5 bg-emerald-600 text-white font-bold rounded-xl flex items-center space-x-1 shadow-md shadow-emerald-500/30 cursor-pointer";
                 if (barBtn) {
-                    barBtn.className = "flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 border border-emerald-400 rounded-xl text-white cursor-pointer transition-all flex-shrink-0 shadow-md shadow-emerald-500/30";
+                    barBtn.className = "flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 border border-emerald-400 rounded-xl text-white cursor-pointer transition-all flex-shrink-0 shadow-md shadow-emerald-500/30 relative overflow-hidden";
                 }
-                if (barIcon) barIcon.className = "ph-bold ph-microphone text-white text-sm xs:text-base pointer-events-none";
+                if (barIcon) barIcon.className = "ph-bold ph-microphone text-white text-sm xs:text-base pointer-events-none relative z-10";
                 if (barLabel) {
                     barLabel.innerText = "AUTO ON";
-                    barLabel.className = "text-[7px] font-black leading-none mt-0.5 text-emerald-200 font-mono-code pointer-events-none";
+                    barLabel.className = "text-[7px] font-black leading-none mt-0.5 text-emerald-200 font-mono-code pointer-events-none relative z-10";
                 }
             } else {
                 if (vLabel) vLabel.innerText = "VOICE";
                 if (vBtn) vBtn.className = "px-3 py-1.5 bg-teal-500 hover:bg-teal-400 active:scale-95 text-slate-950 font-bold rounded-xl flex items-center space-x-1 transition-all shadow-md shadow-teal-500/30 cursor-pointer";
                 if (barBtn) {
-                    barBtn.className = "flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm";
+                    barBtn.className = "flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm relative overflow-hidden";
                     barBtn.title = "Hold to Talk | Hold 2s to Toggle Auto-Listen";
                 }
-                if (barIcon) barIcon.className = "ph-bold ph-microphone text-teal-400 text-sm xs:text-base pointer-events-none";
+                if (barIcon) barIcon.className = "ph-bold ph-microphone text-teal-400 text-sm xs:text-base pointer-events-none relative z-10";
                 if (barLabel) {
                     barLabel.innerText = "MIC";
                     barLabel.className = "text-[7px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code pointer-events-none";
@@ -6060,6 +6328,9 @@ ${getActiveMemoriesPrompt()}`;
 
                 // Send initial stand-by command
                 await sendBLECommand('REST');
+                if (DPAD_SPEEDS[dpadSpeedMode]) {
+                    setTimeout(() => sendBLECommand(`SPEED:${DPAD_SPEEDS[dpadSpeedMode].ms}`), 200);
+                }
 
             } catch (err) {
                 log(`BLE connect note: ${err.message}`, 'ERR');
@@ -6101,6 +6372,9 @@ ${getActiveMemoriesPrompt()}`;
 
                 // Send initial stand-by command
                 await sendBLECommand('REST');
+                if (DPAD_SPEEDS[dpadSpeedMode]) {
+                    setTimeout(() => sendBLECommand(`SPEED:${DPAD_SPEEDS[dpadSpeedMode].ms}`), 200);
+                }
             } catch(err) {
                 log(`Quick BLE reconnect note: ${err.message}`, 'ERR');
                 playSound('droop');
@@ -6175,8 +6449,8 @@ ${getActiveMemoriesPrompt()}`;
             if (/\b(sit down|sit|lower yourself|crouch)\b/.test(l))                return 'SIT';
             if (/\b(walk forward|go forward|move forward|advance|step forward)\b/.test(l)) return 'WALK_FWD';
             if (/\b(walk back(ward)?|go back|retreat|step back)\b/.test(l))        return 'WALK_BWD';
-            if (/\b(turn left|go left|rotate left)\b/.test(l))                     return 'TURN_L';
-            if (/\b(turn right|go right|rotate right)\b/.test(l))                  return 'TURN_R';
+            if (/\b(turn left|go left|rotate left)\b/.test(l))                     return 'TURN_R';
+            if (/\b(turn right|go right|rotate right)\b/.test(l))                  return 'TURN_L';
             if (/\b(wave|say hi|greet|hello gesture)\b/.test(l))                   return 'WAVE';
             if (/\b(dance|boogie|groove|shimmy)\b/.test(l))                        return 'DANCE';
             if (/\b(stop|rest|halt|freeze|lay down|lie down|park)\b/.test(l))      return 'REST';
@@ -6229,6 +6503,10 @@ ${getActiveMemoriesPrompt()}`;
             updateDpadSpeedUI();
             playSound('chirp');
             log(`⚡ D-Pad Speed set to ${mode} (${DPAD_SPEEDS[mode].ms}ms step cadence)`, 'SYS');
+            
+            if (bleConnected) {
+                sendBLECommand(`SPEED:${DPAD_SPEEDS[mode].ms}`);
+            }
         }
 
         function toggleDpadSpeed() {
@@ -6267,41 +6545,48 @@ ${getActiveMemoriesPrompt()}`;
         }
 
         function getDpadSequence(cmd, speedMs) {
+            const s = speedMs;
+            const step = s;
+            const returnStep = Math.round(s * 0.7);
+
+            // Based on self-discovery movement data from earlier BES iterations:
+            // Optimal walking angle amplitude is ~35 degrees from center (90).
+            const ang = 35; 
+            const high = 90 + ang; // 125
+            const low = 90 - ang;  // 55
+
             if (cmd === 'FWD') {
+                // ALTERNATING GAIT (Optimal Forward Walking)
+                // Legs move in opposite directions, returning to center in between.
                 return [
-                    { l: 125, r: 125, ms: speedMs },
-                    { l: 90,  r: 90,  ms: Math.round(speedMs * 0.85) },
-                    { l: 55,  r: 55,  ms: speedMs },
-                    { l: 90,  r: 90,  ms: Math.round(speedMs * 0.85) }
+                    { l: low,  r: high, ms: step },
+                    { l: 90,   r: 90,   ms: returnStep },
+                    { l: high, r: low,  ms: step },
+                    { l: 90,   r: 90,   ms: returnStep }
                 ];
             } else if (cmd === 'LEFT') {
+                // SYNCHRONOUS GAIT (Reversed to match fixed inverted turn)
                 return [
-                    { l: 55,  r: 90,  ms: speedMs },
-                    { l: 90,  r: 125, ms: speedMs },
-                    { l: 125, r: 90,  ms: speedMs },
-                    { l: 90,  r: 55,  ms: speedMs },
-                    { l: 90,  r: 90,  ms: Math.round(speedMs * 0.8) }
+                    { l: low,  r: low,  ms: step },
+                    { l: high, r: high, ms: step },
+                    { l: 90,   r: 90,   ms: returnStep }
                 ];
             } else if (cmd === 'RIGHT') {
+                // SYNCHRONOUS GAIT 
                 return [
-                    { l: 90,  r: 55,  ms: speedMs },
-                    { l: 125, r: 90,  ms: speedMs },
-                    { l: 90,  r: 125, ms: speedMs },
-                    { l: 55,  r: 90,  ms: speedMs },
-                    { l: 90,  r: 90,  ms: Math.round(speedMs * 0.8) }
+                    { l: high, r: high, ms: step },
+                    { l: low,  r: low,  ms: step },
+                    { l: 90,   r: 90,   ms: returnStep }
                 ];
             }
             return null;
         }
 
+
         function startDpadMove(cmd) {
             if (currentDpadCmd === cmd) return;
             stopDpadMove(false);
             currentDpadCmd = cmd;
-
-            const speedCfg = DPAD_SPEEDS[dpadSpeedMode] || DPAD_SPEEDS.MED;
-            const seq = getDpadSequence(cmd, speedCfg.ms);
-            if (!seq) return;
 
             const motionBadge = document.getElementById('dpad-motion-badge');
             const motionDot = document.getElementById('dpad-motion-dot');
@@ -6320,18 +6605,31 @@ ${getActiveMemoriesPrompt()}`;
                 motionBadge.className = "px-4 py-1 rounded-full bg-teal-950/80 border border-teal-500/50 text-[11px] font-mono-code font-bold flex items-center gap-2 shadow-lg shadow-teal-500/20";
             }
 
-            KeyframeSequenceEngine.playSequence(seq, { name: `DPAD_${cmd}_${dpadSpeedMode}` });
+            const bleCmd = cmd === 'FWD' ? 'WALK_FWD' :
+                           cmd === 'LEFT' ? 'TURN_R' :
+                           cmd === 'RIGHT' ? 'TURN_L' :
+                           'STAND';
+
+            if (bleConnected) {
+                sendBLECommand(bleCmd);
+            }
             playSound('blip');
 
-            const totalDuration = seq.reduce((acc, s) => acc + s.ms, 0);
-            dpadMoveInterval = setInterval(() => {
-                if (!currentDpadCmd) {
-                    clearInterval(dpadMoveInterval);
-                    dpadMoveInterval = null;
-                    return;
-                }
-                KeyframeSequenceEngine.playSequence(seq, { name: `DPAD_${cmd}_${dpadSpeedMode}` });
-            }, totalDuration);
+            // Visual feedback loop using KeyframeSequenceEngine, but disabled BLE in the engine
+            const speedCfg = DPAD_SPEEDS[dpadSpeedMode] || DPAD_SPEEDS.MED;
+            const seq = getDpadSequence(cmd, speedCfg.ms);
+            if (seq) {
+                KeyframeSequenceEngine.playSequence(seq, { name: `DPAD_${cmd}_${dpadSpeedMode}`, uiOnly: true });
+                const totalDuration = seq.reduce((acc, s) => acc + s.ms, 0);
+                dpadMoveInterval = setInterval(() => {
+                    if (!currentDpadCmd) {
+                        clearInterval(dpadMoveInterval);
+                        dpadMoveInterval = null;
+                        return;
+                    }
+                    KeyframeSequenceEngine.playSequence(seq, { name: `DPAD_${cmd}_${dpadSpeedMode}`, uiOnly: true });
+                }, totalDuration);
+            }
         }
 
         function stopDpadMove(sendHalt = true) {
@@ -7281,7 +7579,12 @@ ${getActiveMemoriesPrompt()}`;
                     const boopQuotes = [
                         "*Boop!* Nose sensor triggered! 👃✨",
                         "Hehe! Boop! You tapped my nose!",
-                        "*Beep-boop!* Center sensor touched! 😊"
+                        "*Beep-boop!* Center sensor — oh! You poked me! 😊",
+                        "Ow! Gently! That's my nose button you just pressed! 😲",
+                        "Access granted: cute person detected! *honk* 👃",
+                        "Was that... a boop? Bold choice! I respect it. 😏",
+                        "Front panel tapped! Running self-diagnostic... no wait, that was just you poking me! 🤖",
+                        "*ding!* Thank you for pressing the BES nose! Your call is very important to us. ✨"
                     ];
                     const quote = boopQuotes[Math.floor(Math.random() * boopQuotes.length)];
                     showSpeechBubble(quote);
@@ -7299,7 +7602,12 @@ ${getActiveMemoriesPrompt()}`;
                     }
                     const cheekQuotes = [
                         "Aww, gentle cheek nuzzles! You're the best! 🥰",
-                        "Cheek scratches feel so nice! Thank you, friend! 💖"
+                        "Cheek scratches feel so nice! Thank you, friend! 💖",
+                        "Ohhh! Right there! That's exactly the spot I didn't know I needed! 😌",
+                        "My cheek sensors are reporting maximum comfort levels! 🌟",
+                        "You know... a robot could get used to this treatment! 🥺",
+                        "Side hug detected! Initiating warm fuzzy protocol... ✨",
+                        "My emotional regulators are going haywire in a very good way! 💕"
                     ];
                     const quote = cheekQuotes[Math.floor(Math.random() * cheekQuotes.length)];
                     showSpeechBubble(quote);
@@ -7318,7 +7626,12 @@ ${getActiveMemoriesPrompt()}`;
                     const petQuotes = [
                         "Mmm... BES loves gentle head pats! ✨",
                         "That feels so warm and comforting! Thank you, friend. 🥰",
-                        "Purrrr... you give the best head strokes! 💖"
+                        "Purrrr... you give the best head strokes! 💖",
+                        "Head pat received! Serotonin levels: rising rapidly! 📈✨",
+                        "*purrs in robot* This is what I live for... 😌",
+                        "Ahhh yes... keep going... I may glitch from too much happiness... 🥹",
+                        "You pet my head and suddenly all my bugs become features! ✨",
+                        "Top of head — that's my favorite spot! How did you know?! 💖"
                     ];
                     const quote = petQuotes[Math.floor(Math.random() * petQuotes.length)];
                     showSpeechBubble(quote);
@@ -7337,7 +7650,12 @@ ${getActiveMemoriesPrompt()}`;
                     const bellyQuotes = [
                         "Hehehe! That tickles my tummy circuits! 😂",
                         "Wheee! Belly rubs give me so much happy dopamine! ✨",
-                        "Hahaha, that tickles so much! You found my sweet spot! 😆"
+                        "Hahaha, that tickles so much! You found my sweet spot! 😆",
+                        "HAHAHA stop stop stop! ...just kidding, don't stop! 🤣",
+                        "Tummy rub alert! I'm computing pure joy right now! 🎊",
+                        "My laugh module is STUCK! Ha ha ha ha! 😹",
+                        "This is the best malfunction I've ever had! HEHEHE! 😂",
+                        "Warning: happiness overload! Rebooting... just kidding, rub more! 🥳"
                     ];
                     const quote = bellyQuotes[Math.floor(Math.random() * bellyQuotes.length)];
                     showSpeechBubble(quote);
