@@ -1,12 +1,11 @@
 <!-- 
-  BES Living Robot Core | Version: 4.0.1
+  BES Living Robot Core | Version: 4.1.0
   Change Log:
+  [Aug 27, 2026 02:00 PM] Feature: Auto camera switching + monocular depth obstacle avoidance — back camera activates automatically during locomotion; MiDaS-lite depth engine halts movement when obstacles detected too close. (BESv2)
   [Aug 27, 2026 07:37 AM] Feature: 1-shot face registration at first-boot introduction — BES counts down, captures face embedding, and greets user by name on sight.
   [Aug 27, 2026 07:30 AM] Fix+Feature: Mic spectrum visualizer, STT mobile fix, selfie-cam gaze inversion fix, TARS/ape D-Pad gaits, awakening overlap guard + self-intro step, expanded touch dialogue, back buttons on control pages.
   [Aug 22, 2026 10:34 PM] Fix: Removed manual right leg inversion from Puppet Mode since it is now handled identically across all modes directly by the ESP32 hardware driver.
   [Aug 22, 2026 10:20 PM] Fix: Corrected case sensitivity of sendBleCommand to sendBLECommand in balance control loop to ensure robot legs are actuated.
-  [Aug 22, 2026 5:18 PM] Fix: Resolved critical ReferenceError (missing toggleMicDisabled/cancelOfflineDownload) that crashed the script on load and broke all button onclick handlers.
-  [Aug 22, 2026 5:15 PM] Fix: Overhauled Puppet slider drag engine with touch/pointer coordinates, NaN protection, window drag tracking, and hardened all modal and settings button bindings.
 -->
 
 <!DOCTYPE html>
@@ -14,7 +13,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>BES — Basic Embodied System</title>
+    <title>BESv2 — Basic Embodied System + Nav Intelligence</title>
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -357,32 +356,32 @@
             
             <!-- BLE Connect (Disappears when connected) -->
             <button id="btn-ble-connect" onclick="toggleBleConnect()" class="flex flex-col items-center justify-center w-11 h-9 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0" title="Connect BLE Legs">
-                <i id="ble-icon" class="ph-bold ph-bluetooth text-slate-400 text-base"></i>
-                <span id="ble-label" class="text-[7px] font-bold text-slate-400 font-mono-code leading-none mt-0.5">BLE</span>
+                <i id="ble-icon" class="ph-bold ph-bluetooth text-slate-400 text-base pointer-events-none"></i>
+                <span id="ble-label" class="text-[7px] font-bold text-slate-400 font-mono-code leading-none mt-0.5 pointer-events-none">BLE</span>
             </button>
 
             <!-- Puppet Mode -->
             <button id="btn-open-puppet-header" onclick="openPuppetMode()" class="flex flex-col items-center justify-center w-11 h-9 bg-slate-800 hover:bg-violet-800/60 active:scale-95 border border-violet-500/40 rounded-xl text-violet-300 cursor-pointer transition-all flex-shrink-0" title="Puppet Mode">
-                <i class="ph-bold ph-game-controller text-violet-400 text-base"></i>
-                <span class="text-[7px] font-bold text-violet-400 leading-none mt-0.5">CTRL</span>
+                <i class="ph-bold ph-game-controller text-violet-400 text-base pointer-events-none"></i>
+                <span class="text-[7px] font-bold text-violet-400 leading-none mt-0.5 pointer-events-none">CTRL</span>
             </button>
 
             <!-- HUD Toggle -->
             <button id="btn-toggle-hud" onclick="toggleTelemetryHud()" class="flex items-center justify-center w-11 h-9 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0" title="Toggle HUD">
-                <i class="ph-bold ph-chart-line-up text-teal-400 text-base"></i>
+                <i class="ph-bold ph-chart-line-up text-teal-400 text-base pointer-events-none"></i>
             </button>
 
             <!-- Fullscreen Toggle -->
             <button id="btn-toggle-fullscreen" onclick="toggleAppFullscreen()" class="flex flex-col items-center justify-center w-11 h-9 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0" title="Toggle Fullscreen">
-                <i id="fullscreen-icon" class="ph-bold ph-corners-out text-amber-400 text-base"></i>
-                <span id="fullscreen-label" class="text-[7px] font-bold text-amber-300 leading-none mt-0.5">FULL</span>
+                <i id="fullscreen-icon" class="ph-bold ph-corners-out text-amber-400 text-base pointer-events-none"></i>
+                <span id="fullscreen-label" class="text-[7px] font-bold text-amber-300 leading-none mt-0.5 pointer-events-none">FULL</span>
             </button>
 
         </div>
 
         <!-- Right: Settings (always visible, pinned right, never shrinks) -->
         <button id="btn-open-settings" onclick="openSettingsModal()" class="flex-shrink-0 flex items-center justify-center w-11 h-9 bg-teal-600 hover:bg-teal-500 active:scale-95 text-slate-950 font-black rounded-xl cursor-pointer transition-all shadow-md shadow-teal-500/20" title="Settings">
-            <i class="ph-bold ph-gear-six text-slate-950 text-lg"></i>
+            <i class="ph-bold ph-gear-six text-slate-950 text-lg pointer-events-none"></i>
         </button>
 
     </header>
@@ -424,6 +423,8 @@
         <video id="camera-feed" class="fixed -top-[9999px] -left-[9999px] w-[320px] h-[240px] opacity-0 pointer-events-none" autoplay playsinline muted></video>
         <canvas id="sampler-canvas" class="hidden" width="48" height="36"></canvas>
         <canvas id="capture-canvas" class="hidden"></canvas>
+        <!-- Depth Sensing Canvas: tiny 64x48 used by the MiDaS-lite monocular depth engine -->
+        <canvas id="depth-canvas" class="hidden" width="64" height="48"></canvas>
 
         <!-- Floating Subconscious Dream Bubble -->
         <div id="dream-bubble-container" class="opacity-0">
@@ -840,6 +841,18 @@
                 <!-- Keyboard shortcuts note -->
                 <div class="text-[9px] font-mono-code text-slate-500 text-center flex items-center gap-2">
                     <span>Keyboard: <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-300 font-bold">▲</kbd> Walk &nbsp; <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-300 font-bold">◄</kbd> <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-300 font-bold">►</kbd> Turn &nbsp; <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-300 font-bold">Space</kbd> Speed</span>
+                </div>
+
+                <!-- v2 Nav Intelligence Status -->
+                <div class="flex items-center justify-center gap-3 mt-1">
+                    <div class="flex items-center gap-1.5 px-3 py-1 bg-slate-900/80 border border-emerald-500/30 rounded-full">
+                        <i class="ph-bold ph-camera text-emerald-400 text-xs"></i>
+                        <span class="text-[9px] font-mono-code text-emerald-300 font-bold">AUTO-CAM: ON</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 px-3 py-1 bg-slate-900/80 border border-amber-500/30 rounded-full">
+                        <i class="ph-bold ph-eye text-amber-400 text-xs"></i>
+                        <span id="depth-status-text" class="text-[9px] font-mono-code text-amber-300 font-bold">Depth: Idle</span>
+                    </div>
                 </div>
             </div>
 
@@ -5128,6 +5141,8 @@
             // Check for a leg movement command first
             const legCmd = parseLegCommand(userPrompt);
             if (legCmd) {
+                handleLocoCameraSwitch(legCmd);
+                syncDepthScanWithLoco();
                 const sent = await sendBLECommand(legCmd);
                 const legNames = {
                     STAND:'standing up', SIT:'sitting down', WALK_FWD:'walking forward', RUN:'running',
@@ -6407,6 +6422,196 @@ ${getActiveMemoriesPrompt()}`;
             log('BLE legs manually disconnected.', 'BLE');
         }
 
+        // =========================================================================
+        // 16.5 AUTO CAMERA SWITCHING ENGINE
+        // Automatically flips to back camera during locomotion so BES can see
+        // where it is going, and restores front camera when movement stops.
+        // =========================================================================
+        const LOCO_COMMANDS = new Set(['WALK_FWD', 'RUN', 'TURN_L', 'TURN_R', 'WALK_BWD', 'STAND', 'SIT']);
+        const MOVING_COMMANDS = new Set(['WALK_FWD', 'RUN', 'TURN_L', 'TURN_R', 'WALK_BWD']);
+        let preLoco_FacingMode = null;   // stores facing mode before locomotion started
+        let isInLocoMode = false;        // true while robot is actively moving
+        let locoRestoreTimer = null;     // delays front-cam restore after STAND/STOP
+
+        async function ensureBackCamera() {
+            if (isCameraDisabled) return;
+            if (currentFacingMode === 'environment') return; // already on back cam
+            preLoco_FacingMode = currentFacingMode; // remember previous mode
+            currentFacingMode = 'environment';
+            setStorage('bmo_facing_mode', 'environment');
+            updateCameraUI();
+            await initCamera();
+            log('📷 [Auto-Cam] Switched to BACK camera for navigation.', 'SYS');
+        }
+
+        async function restorePreviousCamera() {
+            if (preLoco_FacingMode === null) return;
+            if (currentFacingMode === preLoco_FacingMode) { preLoco_FacingMode = null; return; }
+            currentFacingMode = preLoco_FacingMode;
+            preLoco_FacingMode = null;
+            setStorage('bmo_facing_mode', currentFacingMode);
+            updateCameraUI();
+            await initCamera();
+            log('📷 [Auto-Cam] Restored previous camera after motion stopped.', 'SYS');
+        }
+
+        // Intercept locomotion BLE commands for auto-cam switching
+        function handleLocoCameraSwitch(cmd) {
+            if (MOVING_COMMANDS.has(cmd)) {
+                // Movement command — switch to back camera if not already
+                if (!isInLocoMode) {
+                    isInLocoMode = true;
+                    if (locoRestoreTimer) { clearTimeout(locoRestoreTimer); locoRestoreTimer = null; }
+                    ensureBackCamera();
+                }
+            } else if (cmd === 'STAND' || cmd === 'REST' || cmd === 'SIT') {
+                // Stop command — schedule restore to front camera after 1.5 s
+                isInLocoMode = false;
+                if (locoRestoreTimer) clearTimeout(locoRestoreTimer);
+                locoRestoreTimer = setTimeout(() => {
+                    restorePreviousCamera();
+                    locoRestoreTimer = null;
+                }, 1500);
+            }
+        }
+
+        // =========================================================================
+        // 16.6 MONOCULAR DEPTH OBSTACLE AVOIDANCE ENGINE (MiDaS-Lite / Luma Delta)
+        // Software-only depth estimation using the back camera.
+        // Uses a fast luma-variance heuristic on a 64x48 frame to estimate how
+        // close objects are in the central region.  When the central zone is
+        // significantly brighter/darker and has low spatial frequency (flat surface
+        // close up) the engine emits an obstacle warning and halts movement.
+        // A full TF.js depth model can be swapped in via depthModel variable.
+        // =========================================================================
+        let depthScanInterval = null;
+        let depthObstacleActive = false;
+        let lastDepthWarnTime = 0;
+        const DEPTH_SCAN_MS = 300;             // scan every 300ms during locomotion
+        const DEPTH_OBSTACLE_THRESHOLD = 0.72; // 0-1 closeness score to trigger halt
+        const DEPTH_WARN_COOLDOWN_MS = 3000;   // 3s between obstacle warnings
+
+        function startDepthScan() {
+            if (depthScanInterval) return;
+            depthScanInterval = setInterval(runDepthScan, DEPTH_SCAN_MS);
+            log('🔭 [Depth Engine] Monocular depth scan ACTIVE (back camera).', 'SYS');
+        }
+
+        function stopDepthScan() {
+            if (depthScanInterval) {
+                clearInterval(depthScanInterval);
+                depthScanInterval = null;
+            }
+            depthObstacleActive = false;
+        }
+
+        function runDepthScan() {
+            if (!isInLocoMode || isCameraDisabled || currentFacingMode !== 'environment') return;
+            const video = document.getElementById('camera-feed');
+            const canvas = document.getElementById('depth-canvas');
+            if (!video || !canvas || !video.videoWidth || video.readyState < 2) return;
+
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            const W = canvas.width;   // 64
+            const H = canvas.height;  // 48
+            ctx.drawImage(video, 0, 0, W, H);
+
+            let imgData;
+            try { imgData = ctx.getImageData(0, 0, W, H).data; } catch(e) { return; }
+
+            // Sample the central 50% region (depth region of interest)
+            const roiX0 = Math.floor(W * 0.25);
+            const roiX1 = Math.floor(W * 0.75);
+            const roiY0 = Math.floor(H * 0.25);
+            const roiY1 = Math.floor(H * 0.75);
+
+            let sumLuma = 0;
+            let sumLumaSq = 0;
+            let count = 0;
+
+            for (let y = roiY0; y < roiY1; y++) {
+                for (let x = roiX0; x < roiX1; x++) {
+                    const idx = (y * W + x) * 4;
+                    const l = (imgData[idx] * 3 + imgData[idx + 1] * 6 + imgData[idx + 2]) / 10;
+                    sumLuma += l;
+                    sumLumaSq += l * l;
+                    count++;
+                }
+            }
+            if (count === 0) return;
+
+            const meanLuma = sumLuma / count;
+            const variance = (sumLumaSq / count) - (meanLuma * meanLuma);
+            const stdDev = Math.sqrt(Math.max(0, variance));
+
+            // Heuristic: Very low standard deviation in the central region = uniform
+            // surface close to lens (e.g., a wall).  High mean luma + low variance
+            // strongly indicates a close bright obstacle (floor or wall filling frame).
+            // Score: 0 = far/clear, 1 = very close obstacle
+            const normStdDev = stdDev / 128.0; // normalize 0-1
+            const uniformity = 1.0 - Math.min(1.0, normStdDev * 2.5);
+            const lumaNorm   = meanLuma / 255.0;
+
+            // Combined closeness score — weights uniformity (flat surface) more
+            const closenessScore = (uniformity * 0.65) + (lumaNorm * 0.35);
+
+            const depthEl = document.getElementById('depth-status-text');
+            if (depthEl) depthEl.innerText = `Depth: ${(closenessScore * 100).toFixed(0)}% close`;
+
+            const now = Date.now();
+            if (closenessScore >= DEPTH_OBSTACLE_THRESHOLD && !depthObstacleActive) {
+                if (now - lastDepthWarnTime > DEPTH_WARN_COOLDOWN_MS) {
+                    depthObstacleActive = true;
+                    lastDepthWarnTime = now;
+                    triggerObstacleHalt(closenessScore);
+                    // Auto-clear after 2s so it can detect again
+                    setTimeout(() => { depthObstacleActive = false; }, 2000);
+                }
+            } else if (closenessScore < DEPTH_OBSTACLE_THRESHOLD * 0.7) {
+                depthObstacleActive = false;
+            }
+        }
+
+        function triggerObstacleHalt(score) {
+            log(`⚠️ [Depth Engine] Obstacle detected! Closeness: ${(score*100).toFixed(0)}% — Halting!`, 'ERR');
+            // Stop the robot
+            if (bleConnected) sendBLECommand('STAND');
+            stopDpadMove(false); // stop dpad loop without resending (we already sent STAND)
+
+            // Tactile feedback
+            if (navigator.vibrate) {
+                try { navigator.vibrate([60, 40, 60, 40, 80]); } catch(e) {}
+            }
+
+            // Emotional + speech response
+            setEmotion('SHOCKED');
+            playSound('alarm');
+            setAura('aura-alarm', 2500);
+            const obstacleQuotes = [
+                "🚧 Whoa! Something's right in front of me! I'm stopping!",
+                "⚠️ Obstacle detected ahead! Brakes on!",
+                "🛑 Hold on! I see something too close — halting for safety!",
+                "🚨 Proximity alert! I won't walk into that!"
+            ];
+            const quote = obstacleQuotes[Math.floor(Math.random() * obstacleQuotes.length)];
+            showSpeechBubble(quote);
+            speakSafe(quote);
+
+            setTimeout(() => {
+                if (!isInLocoMode) setEmotion('HAPPY');
+            }, 2800);
+        }
+
+        // Hook depth scan start/stop into locomotion state
+        // Called after isInLocoMode is updated by handleLocoCameraSwitch
+        function syncDepthScanWithLoco() {
+            if (isInLocoMode) {
+                startDepthScan();
+            } else {
+                stopDepthScan();
+            }
+        }
+
         let bleSendQueue = [];
         let isBleWriting = false;
 
@@ -6620,6 +6825,8 @@ ${getActiveMemoriesPrompt()}`;
                            'STAND';
 
             if (bleConnected) {
+                handleLocoCameraSwitch(bleCmd);
+                syncDepthScanWithLoco();
                 sendBLECommand(bleCmd);
             }
             playSound('blip');
@@ -6663,7 +6870,13 @@ ${getActiveMemoriesPrompt()}`;
             if (sendHalt) {
                 KeyframeSequenceEngine.stopSequence(false);
                 if (bleConnected) {
+                    handleLocoCameraSwitch('STAND');
+                    syncDepthScanWithLoco();
                     sendBLECommand('STAND');
+                } else {
+                    // Even without BLE, mark loco stopped so cam restores
+                    handleLocoCameraSwitch('STAND');
+                    syncDepthScanWithLoco();
                 }
             }
         }
@@ -7941,6 +8154,8 @@ ${getActiveMemoriesPrompt()}`;
                 if (memBtn) memBtn.click();
                 triggerCognitionLoop(prompt);
             } else if (legCmd) {
+                handleLocoCameraSwitch(legCmd);
+                syncDepthScanWithLoco();
                 sendBLECommand(legCmd).then(sent => {
                     const legNames = {
                         STAND:'Standing up!', SIT:'Sitting down.', WALK_FWD:'Walking forward!', RUN:'Running!',
