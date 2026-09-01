@@ -1,11 +1,11 @@
 <!-- 
-  BES Living Robot Core | Version: 4.1.4
+  BES Living Robot Core | Version: 4.1.5
   Change Log:
+  [Sep 01, 2026 01:40 PM] Fix: Resolved wake-to-STT mic race condition, fixed post-speech auto-listen instantiation bug, and reinforced 6s active listening window.
   [Sep 01, 2026 01:25 PM] Fix: Stabilized wake word engine with continuous recognition stream, unified updateWakeUI state sync, and persistent active toggle lock.
   [Sep 01, 2026 11:02 AM] Fix: Silenced wake word engage/disengage sounds; audio now plays strictly on wake word trigger recognition and prompt message dispatch.
   [Sep 01, 2026 10:50 AM] Fix: Replaced input field with non-credential textarea and disabled autocomplete to prevent browser account login popup.
   [Sep 01, 2026 10:45 AM] Fix: Decoupled getUserMedia from SpeechRecognition (removed mic hardware lock), imported MIGO STT sanitizer and dual-timer silence engine.
-  [Aug 27, 2026 02:00 PM] Feature: Auto camera switching + monocular depth obstacle avoidance — back camera activates automatically during locomotion; MiDaS-lite depth engine halts movement when obstacles detected too close. (BESv2)
 -->
 
 <!DOCTYPE html>
@@ -4507,8 +4507,8 @@
             if (listenModeActive && !isMicDisabled && !isHoldingVoice) {
                 // 350ms speaker echo cooldown to prevent mic feedback
                 setTimeout(() => {
-                    if (listenModeActive && !isTalking && !isSleeping && !isHoldingVoice && nativeSpeechRec) {
-                        try { nativeSpeechRec.start(); } catch(e){}
+                    if (listenModeActive && !isTalking && !isSleeping && !isHoldingVoice) {
+                        startActiveSpeechRecognition();
                     }
                 }, 350);
             } else if (autoListenActive && !isMicDisabled) {
@@ -4528,9 +4528,7 @@
         function triggerPostSpeechAutoListen() {
             if (isTalking || isSleeping || !isBooted || isMicDisabled || !autoListenActive || isHoldingVoice) return;
             log("🎙️ [AIONA Continuity] Listening for reply after response...", "AI");
-            if (nativeSpeechRec) {
-                try { nativeSpeechRec.start(); } catch(e){}
-            }
+            startActiveSpeechRecognition();
         }
 
         function stripEmojisForTTS(text) {
@@ -5844,21 +5842,27 @@ ${getActiveMemoriesPrompt()}`;
                             showSpeechBubble("Yes? I'm listening...", true);
                             
                             isWakeScanning = false;
-                            try { wakeRecognition.abort(); } catch(err){}
-                            wakeRecognition = null;
+                            isSttListening = true; // Lock immediately to prevent race conditions
+                            updateMicUI();
+
+                            if (wakeRecognition) {
+                                try { wakeRecognition.stop(); } catch(err){}
+                                wakeRecognition = null;
+                            }
 
                             let trailingText = transcript;
                             WAKE_WORD_LIST.forEach(w => {
                                 trailingText = trailingText.replace(new RegExp(`^.*?${w}[,\\s]*`, 'i'), '');
                             });
 
-                            setTimeout(() => {
-                                if (trailingText.trim()) {
-                                    heardUserSpeech(trailingText.trim());
-                                } else {
+                            if (trailingText.trim()) {
+                                isSttListening = false;
+                                heardUserSpeech(trailingText.trim());
+                            } else {
+                                setTimeout(() => {
                                     startActiveSpeechRecognition();
-                                }
-                            }, 250);
+                                }, 350);
+                            }
                             break;
                         }
                     }
@@ -5910,7 +5914,10 @@ ${getActiveMemoriesPrompt()}`;
         function startActiveSpeechRecognition() {
             if (isMicDisabled || isTalking || isSleeping) return;
             const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SpeechRec) return;
+            if (!SpeechRec) {
+                log('Speech recognition not supported in this browser.', 'SYS');
+                return;
+            }
 
             stopAllSpeechEngines();
             isSttListening = true;
@@ -5918,6 +5925,7 @@ ${getActiveMemoriesPrompt()}`;
             accumulatedHoldTranscript = "";
             updateMicUI();
             setAura('aura-listening', 10000);
+            showSpeechBubble("Listening... (speak now)", true);
 
             try {
                 nativeSpeechRec = new SpeechRec();
@@ -5925,9 +5933,15 @@ ${getActiveMemoriesPrompt()}`;
                 nativeSpeechRec.interimResults = true;
                 nativeSpeechRec.lang = navigator.language || 'en-US';
 
+                nativeSpeechRec.onstart = () => {
+                    isSttListening = true;
+                    updateMicUI();
+                    resetSttSilenceTimer(true); // 6-second window for user to start speaking
+                };
+
                 nativeSpeechRec.onspeechstart = () => {
                     hasUserSpoken = true;
-                    resetSttSilenceTimer(false);
+                    resetSttSilenceTimer(false); // 2.5s silence timeout once user is actively speaking
                 };
 
                 nativeSpeechRec.onresult = (e) => {
