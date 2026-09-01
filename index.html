@@ -1,11 +1,11 @@
 <!-- 
-  BES Living Robot Core | Version: 4.2.9
+  BES Living Robot Core | Version: 4.3.2
   Change Log:
+  [Sep 01, 2026 08:25 PM] Feature: Implemented Organic Biological Pacing for Autonomous Mode with natural breathing intervals (15-30s), quiet observation glances, and spontaneous remarks.
+  [Sep 01, 2026 08:15 PM] Fix: Calibrated lift detection sensitivity during active locomotion & autonomous modes with responsive leaky integration (0.970), lower 10cm threshold, and removed blocking flags so human pick-up is instantly detected.
+  [Sep 01, 2026 08:05 PM] Fix: Suppressed dizziness & negative shock reflexes during all automated/autonomous motions, sanitized kaomojis (@_@, ^_^) in TTS voice synthesis, and expanded autonomous modes with a diverse multi-action repertoire and history rotation.
   [Sep 01, 2026 06:50 PM] Feature: Added Height Reaction toggle switch and zero-datum Ground Calibration tool in Settings modal with real-time altimetry telemetry status.
   [Sep 01, 2026 06:45 PM] Fix: Fixed Autonomous Mode execution loop (resolved sensorData.isLifted reference and enabled immediate cycle trigger), and calibrated lift sensitivity with IMU noise deadzone & realistic height thresholds.
-  [Sep 01, 2026 04:40 PM] Fix: Fixed Autonomous Mode chip toggle button click/tap handler by routing through handleChipClick and protecting from generic chip-btn listener overwrite.
-  [Sep 01, 2026 04:35 PM] Fix: Configured mic sound wave spectrum canvas to hide completely when idle and react dynamically only when mic is toggled and user is speaking.
-  [Sep 01, 2026 04:20 PM] Feature: Added Autonomous Sentient Mode with multi-modal perception commentary, fallback heuristic reasoner, and memory question query exclusion.
 -->
 
 <!DOCTYPE html>
@@ -2850,6 +2850,36 @@
                     { l: 115, r: 115, ms: 160 },
                     { l: 90, r: 90, ms: 220 }
                 ],
+                PROUD_LOOK: [
+                    { l: 75, r: 105, ms: 300 },
+                    { l: 105, r: 75, ms: 300 },
+                    { l: 90, r: 90, ms: 250 }
+                ],
+                HAPPY_TIPTOE: [
+                    { l: 110, r: 110, ms: 200 },
+                    { l: 80, r: 80, ms: 200 },
+                    { l: 110, r: 110, ms: 200 },
+                    { l: 90, r: 90, ms: 220 }
+                ],
+                SURPRISE_LEAN: [
+                    { l: 120, r: 60, ms: 350 },
+                    { l: 60, r: 120, ms: 350 },
+                    { l: 90, r: 90, ms: 250 }
+                ],
+                LOOK_AROUND: [
+                    { l: 65, r: 85, ms: 320 },
+                    { l: 90, r: 90, ms: 220 },
+                    { l: 85, r: 65, ms: 320 },
+                    { l: 90, r: 90, ms: 220 }
+                ],
+                GENTLE_STEP_LEFT: [
+                    { l: 55, r: 90, ms: 260 },
+                    { l: 90, r: 90, ms: 220 }
+                ],
+                GENTLE_STEP_RIGHT: [
+                    { l: 90, r: 55, ms: 260 },
+                    { l: 90, r: 90, ms: 220 }
+                ],
                 // Remapped Walk: Uses alternating continuous swing (old Turn Left), slower & stable
                 WALK_CYCLE: [
                     { l: 125, r: 125, ms: 280 },
@@ -2929,11 +2959,18 @@
 
                         if (idx === sanitized.length - 1) {
                             this.isPlaying = false;
+                            if (typeof notifyAutomatedMotionActive === 'function') {
+                                notifyAutomatedMotionActive(2000);
+                            }
                             if (options.onComplete) options.onComplete();
                         }
                     }, cumulativeTime);
                     cumulativeTime += step.ms;
                 });
+
+                if (typeof notifyAutomatedMotionActive === 'function') {
+                    notifyAutomatedMotionActive(cumulativeTime + 2000);
+                }
 
                 log(`💃 [Keyframe Engine] Playing motion routine: "${choreoName}" (${sanitized.length} steps, ${cumulativeTime}ms)`, 'BLE');
                 return true;
@@ -3475,6 +3512,22 @@
         let isFreefalling = false;
         let liftReactionCooldownT = 0;
         let landReactionCooldownT = 0;
+        let lastAutomatedMotionEndTime = 0;
+
+        function notifyAutomatedMotionActive(extraMs = 2500) {
+            lastAutomatedMotionEndTime = Math.max(lastAutomatedMotionEndTime, Date.now() + extraMs);
+        }
+        window.notifyAutomatedMotionActive = notifyAutomatedMotionActive;
+
+        function isAutomatedMotionActive() {
+            return isAutoExperimenting || 
+                   isPerformingSentientCycle || 
+                   (typeof isAutoWandering !== 'undefined' && isAutoWandering) ||
+                   (typeof KeyframeSequenceEngine !== 'undefined' && KeyframeSequenceEngine.isPlaying) ||
+                   puppetRecording ||
+                   (Date.now() < lastAutomatedMotionEndTime);
+        }
+        window.isAutomatedMotionActive = isAutomatedMotionActive;
 
         let heightReactionEnabled = getStorage('bes_height_reaction', 'true') !== 'false';
 
@@ -3556,7 +3609,7 @@
          * Includes obstacle/incline tolerance (up to 20.0 cm) so small obstacles don't falsely block walking
          */
         function checkHeightBeforeMovement(actionName = "Movement") {
-            if (heightReactionEnabled && (sensorData.isLifted || sensorData.heightCm > 20.0)) {
+            if (heightReactionEnabled && (sensorData.isLifted || sensorData.heightCm > 12.0)) {
                 const currentH = sensorData.heightCm > 0 ? sensorData.heightCm.toFixed(1) : "airborne";
                 log(`🚫 [Altimetry] ${actionName} BLOCKED: Robot is suspended in air (+${currentH}cm)! Place on ground first.`, 'WARN');
                 
@@ -3811,7 +3864,7 @@
         window.handleGroundReturn = handleGroundReturn;
 
         function triggerDizzinessReflex() {
-            if (isDizzy || isSleeping || isInLocoMode) return;
+            if (isDizzy || isSleeping || isInLocoMode || isAutomatedMotionActive()) return;
             isDizzy = true;
             log('🌀 [Proprioception] Rapid shaking detected! Dizzy gyro overload triggered.', 'REFLEX');
 
@@ -3827,9 +3880,9 @@
             }
 
             const dizzyQuotes = [
-                "Whoaaa! My gyros are spinning! Everything is wobbly! @_@",
+                "Whoaaa! My gyros are spinning! Everything is wobbly and spinning!",
                 "Whew, dizzy dizzy dizzy! The whole world is doing cartwheels! 😵",
-                "Whoa! Too much G-force for my sensors! @_@"
+                "Whoa! Too much rapid G-force for my sensors!"
             ];
             const quote = dizzyQuotes[Math.floor(Math.random() * dizzyQuotes.length)];
             showSpeechBubble(quote);
@@ -3843,6 +3896,7 @@
                 restoreAmbientCircadianAura();
             }, 4500);
         }
+        window.triggerDizzinessReflex = triggerDizzinessReflex;
 
         function triggerInversionReflex() {
             if (isSleeping) return;
@@ -5445,6 +5499,12 @@
             if (!text) return "";
             try {
                 return text
+                    // Strip kaomojis & ASCII emoticons (@_@, ^_^, >_<, o_o, O_O, -_-, T_T, x_x, *_* etc.)
+                    .replace(/[@^><oOxX*._~T\-][_\-.~^oOxX*@><]+[@^><oOxX*._~T\-]/g, "")
+                    .replace(/\b(?:@_@|\^_|\^_\^|>_<|o_o|O_O|-_-|T_T|x_x|\*_\*|\._\.|~_~|\^o\^|\(>_<\)|\(@_@\))\b/gi, "")
+                    .replace(/@+_+@+/g, "")
+                    .replace(/@+/g, "")
+                    .replace(/_+/g, " ")
                     // Unicode Property Escapes: strip all emoji characters & symbols
                     .replace(/\p{Extended_Pictographic}/gu, "")
                     .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}]/gu, "")
@@ -5455,6 +5515,10 @@
             } catch (e) {
                 // Fallback for older JS engines without unicode property escapes
                 return text
+                    .replace(/[@^><oOxX*._~T\-][_\-.~^oOxX*@><]+[@^><oOxX*._~T\-]/g, "")
+                    .replace(/@+_+@+/g, "")
+                    .replace(/@+/g, "")
+                    .replace(/_+/g, " ")
                     .replace(/[\uD83C-\uDBFF\uDC00-\uDFFF]+/g, "")
                     .replace(/[\u2600-\u27BF]/g, "")
                     .replace(/\s+/g, " ")
@@ -5635,11 +5699,11 @@
                     .replace(/\/255\b/g, "")
                     .replace(/\*[^\*]+\*/g, "")
                     .replace(/\[SAVE_MEMORY:[^\]]*?\]/gi, "")
-                    .replace(/[`#|<>\[\]{}\\]/g, "")
+                    .replace(/[`#|<>\[\]{}\\_@^~]/g, " ")
                     // Pronounce B.E.S. or BES naturally as the single word "Bes"
                     .replace(/\bB\.?E\.?S\.?\b/gi, "Bes");
 
-                // Strip emojis from speech synthesizer utterance so TTS does not speak emoji names aloud
+                // Strip emojis and kaomojis from speech synthesizer utterance so TTS does not speak symbol names aloud
                 cleaned = stripEmojisForTTS(cleaned);
 
                 if (!cleaned) return;
@@ -6517,7 +6581,7 @@ ${getActiveMemoriesPrompt()}`;
                     sustainedUpwardDurationMs = 0;
                     heightElevationStartTime = 0;
                     sustainedHeightDurationMs = 0;
-                } else if (mag < 0.40 && Math.abs(vertAccel) < 0.45) {
+                } else if (mag < 0.35 && Math.abs(vertAccel) < 0.35) {
                     // Stationary on flat surface / ground (ZUPT Zero-Velocity Update)
                     sensorData.verticalVel = 0;
                     if (!sensorData.isLifted) {
@@ -6529,9 +6593,9 @@ ${getActiveMemoriesPrompt()}`;
                     heightElevationStartTime = 0;
                     sustainedHeightDurationMs = 0;
                 } else {
-                    // Apply deadband to resting IMU noise so resting vibration never accumulates into phantom lift
-                    const effectiveVertAccel = Math.abs(vertAccel) > 0.50 ? (vertAccel - Math.sign(vertAccel) * 0.50) : 0;
-                    sensorData.verticalVel = (sensorData.verticalVel + effectiveVertAccel * dt) * 0.930;
+                    // Responsive deadband (0.28 m/s²) filtering resting IMU noise while capturing human hand pick-up
+                    const effectiveVertAccel = Math.abs(vertAccel) > 0.28 ? (vertAccel - Math.sign(vertAccel) * 0.28) : 0;
+                    sensorData.verticalVel = (sensorData.verticalVel + effectiveVertAccel * dt) * 0.970;
                     
                     // Integrate relative displacement only with meaningful vertical velocity
                     const dH = sensorData.verticalVel * dt;
@@ -6540,39 +6604,40 @@ ${getActiveMemoriesPrompt()}`;
                 }
 
                 // 5. TEMPORAL PERSISTENCE ACCUMULATION FOR TRUE LIFT VS TERRAIN BUMP
-                const upwardAccelThresh = isActivelyMoving ? 3.6 : 2.6;
+                const upwardAccelThresh = isActivelyMoving ? 2.8 : 2.2;
                 if (vertAccel > upwardAccelThresh) {
                     if (upwardMotionStartTime === 0) upwardMotionStartTime = now;
                     sustainedUpwardDurationMs = now - upwardMotionStartTime;
-                } else if (vertAccel < 0.5) {
+                } else if (vertAccel < 0.3) {
                     upwardMotionStartTime = 0;
                     sustainedUpwardDurationMs = 0;
                 }
 
-                const heightThresh = isActivelyMoving ? 20.0 : 15.0;
-                if (sensorData.heightCm > heightThresh && sensorData.verticalVel > 0.12) {
+                const heightThresh = isActivelyMoving ? 12.0 : 9.0;
+                if (sensorData.heightCm > heightThresh && sensorData.verticalVel > 0.08) {
                     if (heightElevationStartTime === 0) heightElevationStartTime = now;
                     sustainedHeightDurationMs = now - heightElevationStartTime;
-                } else if (sensorData.heightCm < 8.0 || (now - lastObstacleJoltTime < 300)) {
+                } else if (sensorData.heightCm < 5.0 || (now - lastObstacleJoltTime < 300)) {
                     heightElevationStartTime = 0;
                     sustainedHeightDurationMs = 0;
                 }
 
                 // 6. PROPRIOCEPTIVE VERTICAL LIFT DETECTION (WITH OBSTACLE TOLERANCE) & TOUCHDOWN RECOVERY
                 const isObstacleCooling = (now - lastObstacleJoltTime < 300);
+                const isAutoActive = isAutomatedMotionActive();
 
                 const isSuddenLiftTrigger = heightReactionEnabled && !sensorData.isLifted && !isObstacleCooling && (
                     // Persistent upward acceleration & velocity sustained over duration window
-                    (sustainedUpwardDurationMs >= (isActivelyMoving ? 280 : 200) && vertAccel > (isActivelyMoving ? 4.2 : 3.2) && sensorData.verticalVel > (isActivelyMoving ? 0.45 : 0.32)) ||
-                    // Extreme high-g snatch / rapid human pickup
-                    (vertAccel > 6.0 && sustainedUpwardDurationMs >= 140 && sensorData.verticalVel > 0.50)
+                    (sustainedUpwardDurationMs >= (isActivelyMoving ? 140 : 100) && vertAccel > (isActivelyMoving ? 3.0 : 2.2) && sensorData.verticalVel > 0.18) ||
+                    // Rapid human pickup snatch
+                    (vertAccel > 4.5 && sustainedUpwardDurationMs >= 80 && sensorData.verticalVel > 0.25)
                 );
 
                 const isHeightLiftTrigger = heightReactionEnabled && !sensorData.isLifted && !isObstacleCooling && (
                     // Sustained physical displacement in air without immediate ground impact
-                    sustainedHeightDurationMs >= (isActivelyMoving ? 400 : 300) &&
-                    sensorData.heightCm > (isActivelyMoving ? 20.0 : 15.0) &&
-                    (sensorData.verticalVel > 0.12 || vertAccel > 0.4)
+                    sustainedHeightDurationMs >= (isActivelyMoving ? 200 : 140) &&
+                    sensorData.heightCm > (isActivelyMoving ? 12.0 : 9.0) &&
+                    (sensorData.verticalVel > 0.08 || vertAccel > 0.2)
                 );
 
                 if (isSuddenLiftTrigger) {
@@ -6599,7 +6664,7 @@ ${getActiveMemoriesPrompt()}`;
                 }
 
                 // 6. Freefall / Zero-G detection (< 2.8 m/s² total force in free air)
-                if (totalGravMag < 2.8 && !isFreefalling) {
+                if (totalGravMag < 2.8 && !isFreefalling && !isAutoActive) {
                     freefallSampleCount++;
                     if (freefallSampleCount > 3) {
                         triggerFreefallReflex();
@@ -6611,11 +6676,11 @@ ${getActiveMemoriesPrompt()}`;
                     freefallSampleCount = 0;
                 }
 
-                // 7. High-speed spin or violent agitation triggering dizziness
-                if ((spinVal > 280 || mag > 22) && !isDizzy && !isInLocoMode) {
+                // 7. High-speed spin or violent agitation triggering dizziness (suppressed during automated motions)
+                if ((spinVal > 280 || mag > 22) && !isDizzy && !isInLocoMode && !isAutoActive) {
                     sensorData.motionState = "DIZZY GYRO";
                     triggerDizzinessReflex();
-                } else if (mag > 16 && !isInLocoMode) {
+                } else if (mag > 16 && !isInLocoMode && !isAutoActive) {
                     sensorData.motionState = "SHOCK JOLT";
                     if (now - sensorData.lastShockT > 1200) {
                         sensorData.lastShockT = now;
@@ -8536,14 +8601,7 @@ ${getActiveMemoriesPrompt()}`;
                 speakSafe("Autonomous Mode activated! I am exploring and perceiving on my own!");
                 setEmotion('EXCITED');
                 setAura('aura-warm', 6000);
-                log("🤖 [Autonomous Sentience] Mode ENABLED.", "AI");
-
-                // Immediately kick off the first cycle after speech intro finishes
-                setTimeout(() => {
-                    if (autonomousSentientMode && !sensorData.isLifted && !isTalking && !isSleeping) {
-                        runAutonomousSentientCycle(true);
-                    }
-                }, 2200);
+                log("🤖 [Autonomous Sentience] Mode ENABLED with Organic Biological Pacing.", "AI");
             } else {
                 stopAutonomousSentientLoop();
                 playSound('blip');
@@ -8554,57 +8612,131 @@ ${getActiveMemoriesPrompt()}`;
         }
         window.toggleAutonomousSentientMode = toggleAutonomousSentientMode;
 
+        let lastSentientActionTime = 0;
+
         function startAutonomousSentientLoop() {
-            if (autonomousSentientTimer) clearInterval(autonomousSentientTimer);
-            autonomousSentientTimer = setInterval(() => {
-                if (!autonomousSentientMode) return;
-                // Watchdog reset if stuck
-                if (isPerformingSentientCycle && (Date.now() - lastSentientVocalizationTime > 15000)) {
-                    isPerformingSentientCycle = false;
-                }
-                runAutonomousSentientCycle(false);
-            }, 8000);
+            if (autonomousSentientTimer) clearTimeout(autonomousSentientTimer);
+            scheduleNextSentientCycle(true);
         }
 
         function stopAutonomousSentientLoop() {
             if (autonomousSentientTimer) {
-                clearInterval(autonomousSentientTimer);
+                clearTimeout(autonomousSentientTimer);
                 autonomousSentientTimer = null;
             }
             isPerformingSentientCycle = false;
         }
+
+        function scheduleNextSentientCycle(isInitial = false) {
+            if (autonomousSentientTimer) clearTimeout(autonomousSentientTimer);
+            if (!autonomousSentientMode) return;
+
+            // Organic biological delay:
+            // First kick-off: 3.5s
+            // Subsequent cycles: randomized 16s to 28s (with circadian evening relaxation)
+            const hour = new Date().getHours();
+            const isNight = hour >= 22 || hour < 7;
+            const baseMin = isNight ? 24000 : 16000;
+            const baseVariance = isNight ? 18000 : 12000;
+            const nextDelay = isInitial ? 3500 : (baseMin + Math.random() * baseVariance);
+
+            autonomousSentientTimer = setTimeout(async () => {
+                if (!autonomousSentientMode) return;
+                try {
+                    await runAutonomousSentientCycle(isInitial);
+                } finally {
+                    if (autonomousSentientMode) {
+                        scheduleNextSentientCycle(false);
+                    }
+                }
+            }, nextDelay);
+        }
+
+        let recentSentientActions = [];
 
         async function runAutonomousSentientCycle(forceFirst = false) {
             if (!autonomousSentientMode || !isBooted || isSleeping || isTalking || isSttListening || isHoldingVoice || isPerformingSentientCycle || sensorData.isLifted) return;
 
             const now = Date.now();
             const timeSinceUser = now - lastUserInteractionTime;
+            const timeSinceAct = now - lastSentientActionTime;
             const timeSinceVoc = now - lastSentientVocalizationTime;
 
-            // Respect user focus: wait 2.5s of stillness after typing/touch, and 6.5s between vocalizations (unless forced initial start)
-            if (!forceFirst && (timeSinceUser < 2500 || timeSinceVoc < 6500)) return;
+            // Respect user presence: wait at least 5.0s of quiet stillness after user touches/types
+            if (!forceFirst && timeSinceUser < 5000) {
+                log('🤫 [Sentient Pacing] User active recently. Quietly waiting for stillness...', 'AI');
+                return;
+            }
+
+            // Enforce organic pacing between physical actions (at least 12s)
+            if (!forceFirst && timeSinceAct < 12000) return;
 
             // Only block if upside-down or face down on a flat surface
             if (bodyOrientation === 'UPSIDE_DOWN' || bodyOrientation === 'FACE_DOWN') return;
 
             isPerformingSentientCycle = true;
-            lastSentientVocalizationTime = now;
+            lastSentientActionTime = now;
+            notifyAutomatedMotionActive(4000);
 
             try {
-                // 1. EMBODIED EXPLORATORY ACTION
-                const actions = ['CURIOUS_SCAN', 'LOOK_AROUND', 'POLITE_BOW', 'HAPPY_WIGGLE'];
-                if (bleConnected && autowalkActive && checkHeightBeforeMovement("Autonomous step")) {
-                    actions.push('WALK_BURST');
-                }
-                const chosenAction = actions[Math.floor(Math.random() * actions.length)];
+                // Determine organic cycle type:
+                // Type A: Gentle Breathing / Mindful Stillness (approx 25% chance)
+                // Type B: Quiet Exploratory Look / Posture Shift (approx 35% chance, silent observation)
+                // Type C: Full Embodied Movement & Spoken Wonder (approx 40% chance, or on initial start)
+                const roll = forceFirst ? 0.99 : Math.random();
 
-                log(`🤖 [Sentient Loop] Executing action: ${chosenAction}...`, 'AI');
-                if (chosenAction === 'WALK_BURST' && KeyframeSequenceEngine?.PRESETS?.WALK_CYCLE) {
+                if (roll < 0.25) {
+                    // MODE A: Mindful Breathing & Contemplation (Silent, organic breathing pulse)
+                    log('🧘 [Sentient Pacing] Taking a gentle breath & peacefully observing...', 'AI');
+                    setEmotion('HAPPY');
+                    setEyeSparkle(true);
+                    playSound('blip');
+                    setAura('aura-warm', 4000);
+                    updateCuriosityUI("Breathing", "text-teal-300 animate-pulse");
+                    return;
+                }
+
+                // MODE B or C: Select an expressive physical action from diverse repertoire
+                const baseActions = [
+                    'CURIOUS_SCAN',
+                    'LOOK_AROUND',
+                    'POLITE_BOW',
+                    'HAPPY_WIGGLE',
+                    'VICTORY_DANCE',
+                    'EXCITED_BOUNCE',
+                    'PROUD_LOOK',
+                    'HAPPY_TIPTOE',
+                    'SURPRISE_LEAN',
+                    'GENTLE_STEP_LEFT',
+                    'GENTLE_STEP_RIGHT'
+                ];
+
+                if (bleConnected && autowalkActive && checkHeightBeforeMovement("Autonomous step")) {
+                    baseActions.push('WALK_BURST');
+                }
+
+                // If user has taught custom skills, occasionally weave them into autonomous actions!
+                if (Array.isArray(besSkills) && besSkills.length > 0) {
+                    besSkills.forEach(s => baseActions.push(`CUSTOM_SKILL:${s.id}`));
+                }
+
+                // Filter out recently executed actions to guarantee variety and prevent back-to-back repetition
+                let candidateActions = baseActions.filter(a => !recentSentientActions.includes(a));
+                if (candidateActions.length === 0) candidateActions = baseActions;
+
+                const chosenAction = candidateActions[Math.floor(Math.random() * candidateActions.length)];
+                recentSentientActions.push(chosenAction);
+                if (recentSentientActions.length > 4) recentSentientActions.shift();
+
+                log(`🤖 [Sentient Pacing] Executing organic action: ${chosenAction}...`, 'AI');
+
+                if (chosenAction.startsWith('CUSTOM_SKILL:')) {
+                    const sId = chosenAction.replace('CUSTOM_SKILL:', '');
+                    playSkill(sId);
+                } else if (chosenAction === 'WALK_BURST' && KeyframeSequenceEngine?.PRESETS?.WALK_CYCLE) {
                     KeyframeSequenceEngine.playSequence(KeyframeSequenceEngine.PRESETS.WALK_CYCLE, { name: "AUTONOMOUS_WALK_BURST" });
-                } else if (chosenAction === 'POLITE_BOW' && KeyframeSequenceEngine?.PRESETS?.POLITE_BOW) {
-                    KeyframeSequenceEngine.playSequence(KeyframeSequenceEngine.PRESETS.POLITE_BOW, { name: "POLITE_BOW" });
-                } else if (chosenAction === 'HAPPY_WIGGLE' && KeyframeSequenceEngine?.PRESETS?.HAPPY_WIGGLE) {
-                    KeyframeSequenceEngine.playSequence(KeyframeSequenceEngine.PRESETS.HAPPY_WIGGLE, { name: "HAPPY_WIGGLE" });
+                } else if (KeyframeSequenceEngine?.PRESETS && KeyframeSequenceEngine.PRESETS[chosenAction]) {
+                    KeyframeSequenceEngine.playSequence(KeyframeSequenceEngine.PRESETS[chosenAction], { name: chosenAction });
                 } else if (KeyframeSequenceEngine?.PRESETS?.CURIOUS_SCAN) {
                     KeyframeSequenceEngine.playSequence(KeyframeSequenceEngine.PRESETS.CURIOUS_SCAN, { name: "CURIOUS_SCAN" });
                 }
@@ -8612,6 +8744,16 @@ ${getActiveMemoriesPrompt()}`;
                 setEmotion('CURIOUS');
                 setEyeSparkle(true);
                 playSound('chirp');
+
+                // If Mode B (Silent glance) and not forced: do not speak, let it enjoy the quiet movement!
+                const shouldSpeak = forceFirst || (roll >= 0.60 && timeSinceVoc >= 18000);
+                if (!shouldSpeak) {
+                    log('🌿 [Sentient Pacing] Moving quietly without talking (allowing organic breathing room).', 'AI');
+                    return;
+                }
+
+                // MODE C: Spontaneous Spoken Remark
+                lastSentientVocalizationTime = now;
 
                 // 2. MULTI-MODAL PERCEPTION CAPTURE
                 let detectedObjStr = "";
@@ -8769,19 +8911,59 @@ ${getActiveMemoriesPrompt()}`;
             }, 3000);
         }
 
+        let recentWanderRoutines = [];
+
         function triggerAutonomousWanderRoutine() {
             if (!wanderActive || isAutoExperimenting || !isBooted || isSleeping || isTalking) return;
             if (!checkHeightBeforeMovement("Autonomous wander")) return;
             lastExplorationTime = Date.now();
+            notifyAutomatedMotionActive(5000);
             updateCuriosityUI("Wandering", "text-emerald-300 font-bold animate-pulse");
             setEmotion('CURIOUS');
 
-            if (autowalkActive && bleConnected) {
-                log("🧭 [Wander] Executing autonomous walking burst...", "AI");
-                KeyframeSequenceEngine.playSequence(KeyframeSequenceEngine.PRESETS.WALK_CYCLE, { name: "AUTONOMOUS_WALK_BURST" });
-            } else {
-                log("🔍 [Wander] Executing exploratory orientation scan...", "AI");
-                KeyframeSequenceEngine.playSequence(KeyframeSequenceEngine.PRESETS.CURIOUS_SCAN, { name: "EXPLORATORY_SCAN" });
+            const wanderPatterns = [
+                {
+                    name: "STEP_AND_OBSERVE",
+                    preset: bleConnected && autowalkActive ? KeyframeSequenceEngine.PRESETS.WALK_CYCLE : KeyframeSequenceEngine.PRESETS.CURIOUS_SCAN,
+                    desc: "Walking forward and observing surroundings"
+                },
+                {
+                    name: "PIVOT_LEFT_SCAN",
+                    preset: KeyframeSequenceEngine.PRESETS.GENTLE_STEP_LEFT || KeyframeSequenceEngine.PRESETS.TURN_LEFT,
+                    desc: "Pivoting left to inspect room angle"
+                },
+                {
+                    name: "PIVOT_RIGHT_SCAN",
+                    preset: KeyframeSequenceEngine.PRESETS.GENTLE_STEP_RIGHT || KeyframeSequenceEngine.PRESETS.TURN_RIGHT,
+                    desc: "Pivoting right to inspect room space"
+                },
+                {
+                    name: "PEEK_AND_WIGGLE",
+                    preset: KeyframeSequenceEngine.PRESETS.HAPPY_TIPTOE || KeyframeSequenceEngine.PRESETS.HAPPY_WIGGLE,
+                    desc: "Stretching upward and happy wiggle"
+                },
+                {
+                    name: "PANORAMIC_SCAN",
+                    preset: KeyframeSequenceEngine.PRESETS.LOOK_AROUND || KeyframeSequenceEngine.PRESETS.CURIOUS_SCAN,
+                    desc: "Scanning room panorama"
+                },
+                {
+                    name: "PROUD_STANDBY",
+                    preset: KeyframeSequenceEngine.PRESETS.PROUD_LOOK || KeyframeSequenceEngine.PRESETS.POLITE_BOW,
+                    desc: "Observing from a proud posture"
+                }
+            ];
+
+            let candidates = wanderPatterns.filter(p => !recentWanderRoutines.includes(p.name));
+            if (candidates.length === 0) candidates = wanderPatterns;
+
+            const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+            recentWanderRoutines.push(chosen.name);
+            if (recentWanderRoutines.length > 3) recentWanderRoutines.shift();
+
+            log(`🧭 [Wander Routine] Executing pattern: ${chosen.name} (${chosen.desc})...`, "AI");
+            if (chosen.preset) {
+                KeyframeSequenceEngine.playSequence(chosen.preset, { name: `WANDER_${chosen.name}` });
             }
         }
 
@@ -8792,6 +8974,7 @@ ${getActiveMemoriesPrompt()}`;
             lastExplorationTime = Date.now();
             explorationTrialCount++;
             setStorage('bes_trial_count', explorationTrialCount.toString());
+            notifyAutomatedMotionActive(8000);
 
             const abortObj = { aborted: false };
             autoExpAbortController = abortObj;
