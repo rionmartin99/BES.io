@@ -1,11 +1,11 @@
 <!-- 
-  BES Living Robot Core | Version: 4.1.5
+  BES Living Robot Core | Version: 4.2.0
   Change Log:
+  [Sep 01, 2026 01:55 PM] Feature: Unified continuous speech & wake stream architecture — zero mic restarts on wake triggers, unified state machine for one-sentence & follow-up commands.
   [Sep 01, 2026 01:40 PM] Fix: Resolved wake-to-STT mic race condition, fixed post-speech auto-listen instantiation bug, and reinforced 6s active listening window.
   [Sep 01, 2026 01:25 PM] Fix: Stabilized wake word engine with continuous recognition stream, unified updateWakeUI state sync, and persistent active toggle lock.
   [Sep 01, 2026 11:02 AM] Fix: Silenced wake word engage/disengage sounds; audio now plays strictly on wake word trigger recognition and prompt message dispatch.
   [Sep 01, 2026 10:50 AM] Fix: Replaced input field with non-credential textarea and disabled autocomplete to prevent browser account login popup.
-  [Sep 01, 2026 10:45 AM] Fix: Decoupled getUserMedia from SpeechRecognition (removed mic hardware lock), imported MIGO STT sanitizer and dual-timer silence engine.
 -->
 
 <!DOCTYPE html>
@@ -2160,7 +2160,7 @@
                     // Start listening for the name after intro speech
                     setTimeout(() => {
                         if (awaitingNameIntroduction) {
-                            try { startActiveSpeechRecognition(); } catch(e){}
+                            try { startUnifiedSpeechEngine('COMMAND_ACTIVE'); } catch(e){}
                         }
                     }, introMsg.length * 80 + 1500);
                 }, introDelay);
@@ -4504,23 +4504,20 @@
             stopTalkingAnimation();
             if (isSleeping || !isBooted) return;
 
-            if (listenModeActive && !isMicDisabled && !isHoldingVoice) {
-                // 350ms speaker echo cooldown to prevent mic feedback
-                setTimeout(() => {
-                    if (listenModeActive && !isTalking && !isSleeping && !isHoldingVoice) {
-                        startActiveSpeechRecognition();
-                    }
-                }, 350);
-            } else if (autoListenActive && !isMicDisabled) {
-                setTimeout(() => {
-                    if (!isTalking && !isHoldingVoice && isBooted && !isSleeping && autoListenActive && !isMicDisabled) {
-                        triggerPostSpeechAutoListen();
-                    }
-                }, 350);
+            if (autoListenActive && !isMicDisabled) {
+                speechStreamMode = 'COMMAND_ACTIVE';
+                accumulatedTranscript = "";
+                hasUserStartedSpeaking = false;
+                showSpeechBubble("Listening for reply...", true);
+                updateMicUI();
+                resetUnifiedSilenceTimer(true);
+                if (!isSpeechRunning) startUnifiedSpeechEngine('COMMAND_ACTIVE');
             } else {
                 setEmotion('HAPPY');
-                if (wakeScannerActive && !isSleeping && !isTalking && !isMicDisabled && !listenModeActive) {
-                    setTimeout(startWakeWordScanner, 400);
+                speechStreamMode = wakeScannerActive ? 'WAKE_WAIT' : 'IDLE_OFF';
+                updateMicUI();
+                if (wakeScannerActive && !isSpeechRunning) {
+                    setTimeout(() => startUnifiedSpeechEngine('WAKE_WAIT'), 300);
                 }
             }
         }
@@ -4528,7 +4525,7 @@
         function triggerPostSpeechAutoListen() {
             if (isTalking || isSleeping || !isBooted || isMicDisabled || !autoListenActive || isHoldingVoice) return;
             log("🎙️ [AIONA Continuity] Listening for reply after response...", "AI");
-            startActiveSpeechRecognition();
+            startUnifiedSpeechEngine('COMMAND_ACTIVE');
         }
 
         function stripEmojisForTTS(text) {
@@ -5669,21 +5666,20 @@ ${getActiveMemoriesPrompt()}`;
 
 
         // =========================================================================
-        // 12. SPEECH RECOGNITION (STT) & WAKE WORD ENGINE (MIGO ARCHITECTURE)
+        // 12. UNIFIED CONTINUOUS SPEECH & WAKE WORD ENGINE
         // =========================================================================
-        let nativeSpeechRec = null;
-        let wakeRecognition = null;
-        let isWakeScanning = false;
-        let isSttListening = false;
-        let accumulatedHoldTranscript = "";
+        let unifiedSpeechRec = null;
+        let isSpeechRunning = false;
+        let speechStreamMode = 'WAKE_WAIT'; // 'WAKE_WAIT' | 'COMMAND_ACTIVE' | 'MUTED_SPEAKING' | 'IDLE_OFF'
+        let accumulatedTranscript = "";
+        let hasUserStartedSpeaking = false;
         let voiceHoldStartTime = 0;
         let isHoldingVoice = false;
         let listenModeActive = false;
-        let hasUserSpoken = false;
 
         const STT_INITIAL_TIMEOUT_MS = 6000; // 6s wait for user to start speaking
-        const STT_SILENCE_TIMEOUT_MS = 2500; // 2.5s silence timeout once speech started
-        let sttSilenceTimer = null;
+        const STT_SILENCE_TIMEOUT_MS = 2200; // 2.2s silence timeout once speech started
+        let unifiedSilenceTimer = null;
 
         const WAKE_WORD_LIST = [
             'bes', 'best', 'bestie', 'beshy', 'beshie', 
@@ -5715,48 +5711,40 @@ ${getActiveMemoriesPrompt()}`;
             return clean.trim();
         }
 
-        function stopAllSpeechEngines() {
-            if (wakeRecognition) {
-                try { wakeRecognition.abort(); } catch(e){}
-                wakeRecognition = null;
-            }
-            if (nativeSpeechRec) {
-                try { nativeSpeechRec.abort(); } catch(e){}
-                nativeSpeechRec = null;
-            }
-            if (sttSilenceTimer) {
-                clearTimeout(sttSilenceTimer);
-                sttSilenceTimer = null;
-            }
-            isSttListening = false;
-        }
-
-        function initSpeechRecognition() {
-            const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SpeechRec) {
-                log('Web SpeechRecognition not supported in this browser.', 'SYS');
-                return;
-            }
-            if (wakeScannerActive) {
-                startWakeWordScanner();
-            }
-            updateWakeUI();
-            updateMicUI();
-        }
-
-        function resetSttSilenceTimer(isInitial = false) {
-            if (sttSilenceTimer) clearTimeout(sttSilenceTimer);
-            const timeout = (isInitial && !hasUserSpoken) ? STT_INITIAL_TIMEOUT_MS : STT_SILENCE_TIMEOUT_MS;
-            sttSilenceTimer = setTimeout(() => {
-                if (nativeSpeechRec) {
-                    try { nativeSpeechRec.stop(); } catch(e){}
+        function resetUnifiedSilenceTimer(isInitial = false) {
+            if (unifiedSilenceTimer) clearTimeout(unifiedSilenceTimer);
+            const timeout = (isInitial && !hasUserStartedSpeaking) ? STT_INITIAL_TIMEOUT_MS : STT_SILENCE_TIMEOUT_MS;
+            unifiedSilenceTimer = setTimeout(() => {
+                if (speechStreamMode === 'COMMAND_ACTIVE') {
+                    finalizeAndDispatchCommand();
                 }
             }, timeout);
         }
 
+        function finalizeAndDispatchCommand() {
+            if (unifiedSilenceTimer) {
+                clearTimeout(unifiedSilenceTimer);
+                unifiedSilenceTimer = null;
+            }
+            const cleanText = sanitizeSTTTranscript(accumulatedTranscript);
+            accumulatedTranscript = "";
+            hasUserStartedSpeaking = false;
+
+            if (cleanText && cleanText !== "...") {
+                speechStreamMode = 'MUTED_SPEAKING';
+                updateMicUI();
+                heardUserSpeech(cleanText);
+            } else {
+                speechStreamMode = wakeScannerActive ? 'WAKE_WAIT' : 'IDLE_OFF';
+                updateMicUI();
+                if (!wakeScannerActive && !listenModeActive) {
+                    stopAllSpeechEngines();
+                }
+            }
+        }
+
         function emergencyStop() {
             log('🚨 [Emergency Stop] Triggered!', 'SYS');
-            stopAllSpeechEngines();
             if (window.speechSynthesis) window.speechSynthesis.cancel();
             if (speechWatchdogTimer) clearTimeout(speechWatchdogTimer);
             if (window.activeUtterances) window.activeUtterances = [];
@@ -5766,16 +5754,19 @@ ${getActiveMemoriesPrompt()}`;
             setEmotion('NORMAL');
             playSound('blip');
             
-            if (sttSilenceTimer) clearTimeout(sttSilenceTimer);
-            accumulatedHoldTranscript = "";
+            if (unifiedSilenceTimer) clearTimeout(unifiedSilenceTimer);
+            accumulatedTranscript = "";
+            hasUserStartedSpeaking = false;
+            speechStreamMode = wakeScannerActive ? 'WAKE_WAIT' : 'IDLE_OFF';
+            
             const inputBar = document.getElementById('input-prompt-bar');
             if (inputBar) inputBar.value = "";
             showSpeechBubble("Stopped.", true);
+            updateMicUI();
             
-            setTimeout(() => {
-                updateMicUI();
-                if (wakeScannerActive) startWakeWordScanner();
-            }, 500);
+            if (wakeScannerActive && !isSpeechRunning) {
+                startUnifiedSpeechEngine('WAKE_WAIT');
+            }
         }
 
         function updateWakeUI() {
@@ -5798,98 +5789,192 @@ ${getActiveMemoriesPrompt()}`;
         }
         window.updateWakeUI = updateWakeUI;
 
-        function startWakeWordScanner() {
-            if (isMicDisabled || !wakeScannerActive || !isBooted || isSleeping || isTalking || isHoldingVoice || listenModeActive || isSttListening) return;
-            if (isWakeScanning && wakeRecognition) return; // Already scanning cleanly
-            
+        function startUnifiedSpeechEngine(desiredMode = 'WAKE_WAIT') {
+            if (isMicDisabled || !isBooted || isSleeping) return;
             const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SpeechRec) return;
+            if (!SpeechRec) {
+                log('Speech recognition not supported in this browser.', 'SYS');
+                return;
+            }
 
-            if (wakeRecognition) {
-                try { wakeRecognition.abort(); } catch(e){}
-                wakeRecognition = null;
+            speechStreamMode = desiredMode;
+            updateMicUI();
+            updateWakeUI();
+
+            if (isSpeechRunning && unifiedSpeechRec) {
+                // Single live stream already open: seamless mode switch without mic restart!
+                if (desiredMode === 'COMMAND_ACTIVE') {
+                    accumulatedTranscript = "";
+                    hasUserStartedSpeaking = false;
+                    showSpeechBubble("Listening... (speak now)", true);
+                    setAura('aura-listening', 10000);
+                    resetUnifiedSilenceTimer(true);
+                }
+                return;
             }
 
             try {
-                wakeRecognition = new SpeechRec();
-                wakeRecognition.continuous = true; // Continuous listening mode
-                wakeRecognition.interimResults = true;
-                wakeRecognition.lang = 'en-US';
+                unifiedSpeechRec = new SpeechRec();
+                unifiedSpeechRec.continuous = true;
+                unifiedSpeechRec.interimResults = true;
+                unifiedSpeechRec.lang = navigator.language || 'en-US';
 
-                wakeRecognition.onstart = () => {
-                    isWakeScanning = true;
+                unifiedSpeechRec.onstart = () => {
+                    isSpeechRunning = true;
+                    updateMicUI();
                     updateWakeUI();
+                    if (speechStreamMode === 'COMMAND_ACTIVE') {
+                        resetUnifiedSilenceTimer(true);
+                    }
                 };
 
-                wakeRecognition.onresult = (e) => {
-                    registerUserInteraction();
-                    for (let i = e.resultIndex; i < e.results.length; i++) {
-                        const transcript = e.results[i][0].transcript.trim().toLowerCase();
-                        
-                        if (transcript === 'stop' || transcript.startsWith('stop ') || transcript.endsWith(' stop') || transcript.includes(' stop ')) {
-                            isWakeScanning = false;
-                            try { wakeRecognition.abort(); } catch(err){}
-                            wakeRecognition = null;
-                            emergencyStop();
-                            break;
-                        }
+                unifiedSpeechRec.onspeechstart = () => {
+                    if (speechStreamMode === 'COMMAND_ACTIVE') {
+                        hasUserStartedSpeaking = true;
+                        resetUnifiedSilenceTimer(false);
+                    }
+                };
 
-                        const triggered = WAKE_WORD_LIST.some(w => transcript.includes(w));
+                unifiedSpeechRec.onresult = (e) => {
+                    registerUserInteraction();
+                    if (isTalking || speechStreamMode === 'MUTED_SPEAKING') return;
+
+                    let finalStr = "";
+                    let interimStr = "";
+                    for (let i = e.resultIndex; i < e.results.length; i++) {
+                        if (e.results[i].isFinal) {
+                            finalStr += (finalStr ? " " : "") + e.results[i][0].transcript.trim();
+                        } else {
+                            interimStr += (interimStr ? " " : "") + e.results[i][0].transcript.trim();
+                        }
+                    }
+                    const rawFull = (finalStr + " " + interimStr).trim();
+                    const cleanedFull = sanitizeSTTTranscript(rawFull);
+                    if (!cleanedFull) return;
+
+                    const lower = cleanedFull.toLowerCase();
+
+                    // 1. Global Emergency Stop
+                    if (lower === 'stop' || lower.startsWith('stop ') || lower.endsWith(' stop') || lower.includes(' stop ')) {
+                        emergencyStop();
+                        return;
+                    }
+
+                    // 2. Waiting for Wake Word
+                    if (speechStreamMode === 'WAKE_WAIT') {
+                        const triggered = WAKE_WORD_LIST.some(w => lower.includes(w));
                         if (triggered) {
-                            log(`🎤 [Wake Word] Triggered by phrase: "${transcript}"!`, 'AI');
+                            log(`🎤 [Wake Word] Recognized: "${cleanedFull}"`, 'AI');
                             playSound('fanfare');
                             setEmotion('EXCITED');
-                            showSpeechBubble("Yes? I'm listening...", true);
-                            
-                            isWakeScanning = false;
-                            isSttListening = true; // Lock immediately to prevent race conditions
-                            updateMicUI();
 
-                            if (wakeRecognition) {
-                                try { wakeRecognition.stop(); } catch(err){}
-                                wakeRecognition = null;
-                            }
-
-                            let trailingText = transcript;
+                            // Extract trailing command spoken in the same breath
+                            let trailing = cleanedFull;
                             WAKE_WORD_LIST.forEach(w => {
-                                trailingText = trailingText.replace(new RegExp(`^.*?${w}[,\\s]*`, 'i'), '');
+                                trailing = trailing.replace(new RegExp(`^.*?${w}[,\\s]*`, 'i'), '');
                             });
+                            trailing = trailing.trim();
 
-                            if (trailingText.trim()) {
-                                isSttListening = false;
-                                heardUserSpeech(trailingText.trim());
+                            if (trailing) {
+                                // Full sentence in one breath: dispatch immediately on the same stream!
+                                showSpeechBubble(`"${trailing}"`, true);
+                                const inputBar = document.getElementById('input-prompt-bar');
+                                if (inputBar) inputBar.value = trailing;
+                                speechStreamMode = 'MUTED_SPEAKING';
+                                updateMicUI();
+                                heardUserSpeech(trailing);
                             } else {
-                                setTimeout(() => {
-                                    startActiveSpeechRecognition();
-                                }, 350);
+                                // Follow-up command mode: switch seamlessly on the same stream!
+                                showSpeechBubble("Yes? I'm listening...", true);
+                                speechStreamMode = 'COMMAND_ACTIVE';
+                                accumulatedTranscript = "";
+                                hasUserStartedSpeaking = false;
+                                setAura('aura-listening', 10000);
+                                updateMicUI();
+                                resetUnifiedSilenceTimer(true);
                             }
-                            break;
                         }
+                    } 
+                    // 3. Actively Capturing User Command
+                    else if (speechStreamMode === 'COMMAND_ACTIVE') {
+                        hasUserStartedSpeaking = true;
+                        accumulatedTranscript = cleanedFull;
+                        showSpeechBubble(`"${accumulatedTranscript}"`, true);
+                        const inputBar = document.getElementById('input-prompt-bar');
+                        if (inputBar) inputBar.value = accumulatedTranscript;
+                        resetUnifiedSilenceTimer(false);
                     }
                 };
 
-                wakeRecognition.onerror = (e) => {
+                unifiedSpeechRec.onerror = (e) => {
                     if (e.error === 'not-allowed') {
-                        log('Microphone permission required for Wake Word / Speech.', 'SYS');
+                        log('Microphone permission required for Speech.', 'SYS');
                         wakeScannerActive = false;
                         setStorage('bmo_wake_active', 'false');
-                        isWakeScanning = false;
+                        isSpeechRunning = false;
+                        speechStreamMode = 'IDLE_OFF';
                         updateWakeUI();
+                        updateMicUI();
+                    } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
+                        log(`STT Notice: ${e.error}`, 'SYS');
                     }
                 };
 
-                wakeRecognition.onend = () => {
-                    isWakeScanning = false;
-                    wakeRecognition = null;
-                    if (wakeScannerActive && isBooted && !isSleeping && !isTalking && !isHoldingVoice && !listenModeActive && !isSttListening) {
-                        setTimeout(startWakeWordScanner, 400);
+                unifiedSpeechRec.onend = () => {
+                    isSpeechRunning = false;
+                    unifiedSpeechRec = null;
+
+                    // If stream closed mid-command with text, finalize it
+                    if (speechStreamMode === 'COMMAND_ACTIVE' && accumulatedTranscript) {
+                        finalizeAndDispatchCommand();
+                        return;
+                    }
+
+                    // Auto-reconnect if wake word is active
+                    if ((wakeScannerActive || listenModeActive) && isBooted && !isSleeping && !isTalking && !isHoldingVoice) {
+                        setTimeout(() => {
+                            if ((wakeScannerActive || listenModeActive) && !isTalking && !isSleeping) {
+                                startUnifiedSpeechEngine(wakeScannerActive ? 'WAKE_WAIT' : 'COMMAND_ACTIVE');
+                            }
+                        }, 250);
+                    } else {
+                        updateMicUI();
                     }
                 };
 
-                wakeRecognition.start();
+                unifiedSpeechRec.start();
             } catch(e) {
-                isWakeScanning = false;
+                isSpeechRunning = false;
+                unifiedSpeechRec = null;
+                updateMicUI();
             }
+        }
+
+        function stopAllSpeechEngines() {
+            if (unifiedSilenceTimer) {
+                clearTimeout(unifiedSilenceTimer);
+                unifiedSilenceTimer = null;
+            }
+            if (unifiedSpeechRec) {
+                try { unifiedSpeechRec.abort(); } catch(e){}
+                unifiedSpeechRec = null;
+            }
+            isSpeechRunning = false;
+            speechStreamMode = 'IDLE_OFF';
+            updateMicUI();
+        }
+
+        function initSpeechRecognition() {
+            const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRec) {
+                log('Web SpeechRecognition not supported in this browser.', 'SYS');
+                return;
+            }
+            if (wakeScannerActive) {
+                startUnifiedSpeechEngine('WAKE_WAIT');
+            }
+            updateWakeUI();
+            updateMicUI();
         }
 
         function toggleWakeScanner() {
@@ -5900,152 +5985,27 @@ ${getActiveMemoriesPrompt()}`;
 
             if (wakeScannerActive) {
                 log('🎙️ Wake word detection ENABLED ("Hey Bes" / "Bes").', 'SYS');
-                try { startWakeWordScanner(); } catch(e){}
+                startUnifiedSpeechEngine('WAKE_WAIT');
             } else {
                 log('🔇 Wake word detection DISABLED.', 'SYS');
-                isWakeScanning = false;
-                if (wakeRecognition) {
-                    try { wakeRecognition.abort(); } catch(e){}
-                    wakeRecognition = null;
+                if (speechStreamMode === 'WAKE_WAIT') {
+                    stopAllSpeechEngines();
                 }
             }
         }
 
-        function startActiveSpeechRecognition() {
-            if (isMicDisabled || isTalking || isSleeping) return;
-            const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SpeechRec) {
-                log('Speech recognition not supported in this browser.', 'SYS');
-                return;
-            }
-
-            stopAllSpeechEngines();
-            isSttListening = true;
-            hasUserSpoken = false;
-            accumulatedHoldTranscript = "";
-            updateMicUI();
-            setAura('aura-listening', 10000);
-            showSpeechBubble("Listening... (speak now)", true);
-
-            try {
-                nativeSpeechRec = new SpeechRec();
-                nativeSpeechRec.continuous = true;
-                nativeSpeechRec.interimResults = true;
-                nativeSpeechRec.lang = navigator.language || 'en-US';
-
-                nativeSpeechRec.onstart = () => {
-                    isSttListening = true;
-                    updateMicUI();
-                    resetSttSilenceTimer(true); // 6-second window for user to start speaking
-                };
-
-                nativeSpeechRec.onspeechstart = () => {
-                    hasUserSpoken = true;
-                    resetSttSilenceTimer(false); // 2.5s silence timeout once user is actively speaking
-                };
-
-                nativeSpeechRec.onresult = (e) => {
-                    registerUserInteraction();
-                    hasUserSpoken = true;
-                    let finalTranscript = "";
-                    let interimTranscript = "";
-                    for (let i = 0; i < e.results.length; i++) {
-                        if (e.results[i].isFinal) {
-                            finalTranscript += (finalTranscript ? " " : "") + e.results[i][0].transcript.trim();
-                        } else {
-                            interimTranscript += (interimTranscript ? " " : "") + e.results[i][0].transcript.trim();
-                        }
-                    }
-                    const rawFull = (finalTranscript + " " + interimTranscript).trim();
-                    const cleanedFull = sanitizeSTTTranscript(rawFull);
-                    
-                    if (cleanedFull.toLowerCase() === 'stop' || cleanedFull.toLowerCase().endsWith(' stop') || cleanedFull.toLowerCase().startsWith('stop ')) {
-                        try { nativeSpeechRec.abort(); } catch(err){}
-                        emergencyStop();
-                        return;
-                    }
-
-                    if (cleanedFull) {
-                        accumulatedHoldTranscript = cleanedFull;
-                        showSpeechBubble(`"${accumulatedHoldTranscript}"`, true);
-                        const inputBar = document.getElementById('input-prompt-bar');
-                        if (inputBar) inputBar.value = accumulatedHoldTranscript;
-                        resetSttSilenceTimer(false);
-                    }
-                };
-
-                nativeSpeechRec.onerror = (e) => {
-                    if (e.error !== 'no-speech' && e.error !== 'aborted') {
-                        log(`STT: ${e.error}`, 'SYS');
-                    }
-                };
-
-                nativeSpeechRec.onend = () => {
-                    if (sttSilenceTimer) {
-                        clearTimeout(sttSilenceTimer);
-                        sttSilenceTimer = null;
-                    }
-                    isSttListening = false;
-                    const text = sanitizeSTTTranscript(accumulatedHoldTranscript);
-                    accumulatedHoldTranscript = "";
-                    nativeSpeechRec = null;
-
-                    if (isHoldingVoice) return;
-
-                    if (text && text !== "...") {
-                        heardUserSpeech(text);
-                    } else if (listenModeActive && !isSleeping && !isTalking) {
-                        setTimeout(() => {
-                            if (listenModeActive && !isSleeping && !isTalking && !isHoldingVoice) {
-                                startActiveSpeechRecognition();
-                            }
-                        }, 400);
-                    } else {
-                        updateMicUI();
-                        if (wakeScannerActive) setTimeout(startWakeWordScanner, 400);
-                    }
-                };
-
-                nativeSpeechRec.start();
-                resetSttSilenceTimer(true); // Initial 6s window for user to begin speaking
-            } catch(e) {
-                isSttListening = false;
-                updateMicUI();
-            }
-        }
-
-        function startVoiceHold() {
+        function toggleVoiceRecording() {
             registerUserInteraction();
             unlockAudioSession();
-            isHoldingVoice = true;
-            voiceHoldStartTime = Date.now();
-            accumulatedHoldTranscript = "";
-            showSpeechBubble("...", true);
-            startActiveSpeechRecognition();
-            updateMicUI();
-        }
-
-        function endVoiceHold() {
-            if (!isHoldingVoice) return;
-            isHoldingVoice = false;
-            const duration = Date.now() - voiceHoldStartTime;
-
-            if (nativeSpeechRec) {
-                try { nativeSpeechRec.stop(); } catch(e){}
-            }
-
-            updateMicUI();
-
-            const finalText = sanitizeSTTTranscript(accumulatedHoldTranscript);
-            accumulatedHoldTranscript = "";
-
-            if (finalText && finalText !== "...") {
-                heardUserSpeech(finalText);
+            
+            if (speechStreamMode === 'COMMAND_ACTIVE') {
+                finalizeAndDispatchCommand();
             } else {
-                if (duration > 350) {
-                    showSpeechBubble("Tap to talk! ✨", false);
-                }
-                if (wakeScannerActive) setTimeout(startWakeWordScanner, 400);
+                accumulatedTranscript = "";
+                hasUserStartedSpeaking = false;
+                showSpeechBubble("Listening... (speak now)", true);
+                setAura('aura-listening', 10000);
+                startUnifiedSpeechEngine('COMMAND_ACTIVE');
             }
         }
 
@@ -6063,16 +6023,20 @@ ${getActiveMemoriesPrompt()}`;
             if (autoListenActive) {
                 playSound('chirp');
                 showSpeechBubble("🎙️ Auto-Listen: ON! (Continuous listening)");
-                log("🎙️ Auto-Listen mode ENABLED (2s hold toggle).", "SYS");
+                log("🎙️ Auto-Listen mode ENABLED (Continuous conversation).", "SYS");
                 listenModeActive = true;
-                startActiveSpeechRecognition();
+                startUnifiedSpeechEngine('COMMAND_ACTIVE');
             } else {
                 playSound('blip');
-                showSpeechBubble("🎙️ Auto-Listen: OFF (Hold to talk active)");
-                log("🎙️ Auto-Listen mode DISABLED (2s hold toggle).", "SYS");
+                showSpeechBubble("🎙️ Auto-Listen: OFF");
+                log("🎙️ Auto-Listen mode DISABLED.", "SYS");
                 listenModeActive = false;
-                stopAllSpeechEngines();
-                if (wakeScannerActive) setTimeout(startWakeWordScanner, 400);
+                if (!wakeScannerActive) {
+                    stopAllSpeechEngines();
+                } else {
+                    speechStreamMode = 'WAKE_WAIT';
+                    updateMicUI();
+                }
             }
             updateMicUI();
         }
@@ -6080,6 +6044,11 @@ ${getActiveMemoriesPrompt()}`;
         function toggleListenMode() {
             toggleAutoListenMode();
         }
+
+        // Backward-compatible global wrappers
+        window.startActiveSpeechRecognition = () => startUnifiedSpeechEngine('COMMAND_ACTIVE');
+        window.startWakeWordScanner = () => startUnifiedSpeechEngine('WAKE_WAIT');
+        window.stopAllSpeechEngines = stopAllSpeechEngines;
 
         function heardUserSpeech(text) {
             const cleanText = text.trim();
@@ -8723,14 +8692,7 @@ ${getActiveMemoriesPrompt()}`;
                 if (btnVoiceBar) {
                     btnVoiceBar.addEventListener('click', (e) => {
                         registerUserInteraction();
-                        if (isSttListening || isHoldingVoice) {
-                            if (nativeSpeechRec) {
-                                try { nativeSpeechRec.stop(); } catch(err){}
-                            }
-                            isHoldingVoice = false;
-                        } else {
-                            startActiveSpeechRecognition();
-                        }
+                        toggleVoiceRecording();
                     });
                 }
 
