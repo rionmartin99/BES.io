@@ -1,11 +1,11 @@
 <!-- 
-  BES Living Robot Core | Version: 4.1.3
+  BES Living Robot Core | Version: 4.1.4
   Change Log:
+  [Sep 01, 2026 01:25 PM] Fix: Stabilized wake word engine with continuous recognition stream, unified updateWakeUI state sync, and persistent active toggle lock.
   [Sep 01, 2026 11:02 AM] Fix: Silenced wake word engage/disengage sounds; audio now plays strictly on wake word trigger recognition and prompt message dispatch.
   [Sep 01, 2026 10:50 AM] Fix: Replaced input field with non-credential textarea and disabled autocomplete to prevent browser account login popup.
   [Sep 01, 2026 10:45 AM] Fix: Decoupled getUserMedia from SpeechRecognition (removed mic hardware lock), imported MIGO STT sanitizer and dual-timer silence engine.
   [Aug 27, 2026 02:00 PM] Feature: Auto camera switching + monocular depth obstacle avoidance — back camera activates automatically during locomotion; MiDaS-lite depth engine halts movement when obstacles detected too close. (BESv2)
-  [Aug 27, 2026 07:37 AM] Feature: 1-shot face registration at first-boot introduction — BES counts down, captures face embedding, and greets user by name on sight.
 -->
 
 <!DOCTYPE html>
@@ -5675,6 +5675,7 @@ ${getActiveMemoriesPrompt()}`;
         // =========================================================================
         let nativeSpeechRec = null;
         let wakeRecognition = null;
+        let isWakeScanning = false;
         let isSttListening = false;
         let accumulatedHoldTranscript = "";
         let voiceHoldStartTime = 0;
@@ -5779,8 +5780,30 @@ ${getActiveMemoriesPrompt()}`;
             }, 500);
         }
 
+        function updateWakeUI() {
+            const btn = document.getElementById('btn-wake-bar');
+            const icon = document.getElementById('icon-wake-bar');
+            const label = document.getElementById('label-wake-bar');
+            const checkWake = document.getElementById('check-wake-active');
+
+            if (checkWake) checkWake.checked = !!wakeScannerActive;
+
+            if (wakeScannerActive) {
+                if (btn) btn.className = "flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-teal-500 hover:bg-teal-400 active:scale-95 border border-teal-600 rounded-xl text-slate-900 cursor-pointer transition-all flex-shrink-0 shadow-md shadow-teal-500/20";
+                if (icon) icon.className = "ph-bold ph-microphone-stage text-slate-900 text-base xs:text-lg";
+                if (label) label.className = "text-[9px] font-black leading-none mt-0.5 text-slate-900 font-mono-code";
+            } else {
+                if (btn) btn.className = "flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm";
+                if (icon) icon.className = "ph-bold ph-microphone-stage text-slate-400 text-base xs:text-lg";
+                if (label) label.className = "text-[9px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code";
+            }
+        }
+        window.updateWakeUI = updateWakeUI;
+
         function startWakeWordScanner() {
             if (isMicDisabled || !wakeScannerActive || !isBooted || isSleeping || isTalking || isHoldingVoice || listenModeActive || isSttListening) return;
+            if (isWakeScanning && wakeRecognition) return; // Already scanning cleanly
+            
             const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRec) return;
 
@@ -5791,9 +5814,14 @@ ${getActiveMemoriesPrompt()}`;
 
             try {
                 wakeRecognition = new SpeechRec();
-                wakeRecognition.continuous = false; // Single-phrase mode resets context on pause to prevent engine lag
+                wakeRecognition.continuous = true; // Continuous listening mode
                 wakeRecognition.interimResults = true;
                 wakeRecognition.lang = 'en-US';
+
+                wakeRecognition.onstart = () => {
+                    isWakeScanning = true;
+                    updateWakeUI();
+                };
 
                 wakeRecognition.onresult = (e) => {
                     registerUserInteraction();
@@ -5801,6 +5829,7 @@ ${getActiveMemoriesPrompt()}`;
                         const transcript = e.results[i][0].transcript.trim().toLowerCase();
                         
                         if (transcript === 'stop' || transcript.startsWith('stop ') || transcript.endsWith(' stop') || transcript.includes(' stop ')) {
+                            isWakeScanning = false;
                             try { wakeRecognition.abort(); } catch(err){}
                             wakeRecognition = null;
                             emergencyStop();
@@ -5814,12 +5843,13 @@ ${getActiveMemoriesPrompt()}`;
                             setEmotion('EXCITED');
                             showSpeechBubble("Yes? I'm listening...", true);
                             
+                            isWakeScanning = false;
                             try { wakeRecognition.abort(); } catch(err){}
                             wakeRecognition = null;
 
                             let trailingText = transcript;
                             WAKE_WORD_LIST.forEach(w => {
-                                trailingText = trailingText.replace(new RegExp(`^.*?${w}[,\s]*`, 'i'), '');
+                                trailingText = trailingText.replace(new RegExp(`^.*?${w}[,\\s]*`, 'i'), '');
                             });
 
                             setTimeout(() => {
@@ -5837,51 +5867,43 @@ ${getActiveMemoriesPrompt()}`;
                 wakeRecognition.onerror = (e) => {
                     if (e.error === 'not-allowed') {
                         log('Microphone permission required for Wake Word / Speech.', 'SYS');
+                        wakeScannerActive = false;
+                        setStorage('bmo_wake_active', 'false');
+                        isWakeScanning = false;
+                        updateWakeUI();
                     }
                 };
 
                 wakeRecognition.onend = () => {
+                    isWakeScanning = false;
                     wakeRecognition = null;
                     if (wakeScannerActive && isBooted && !isSleeping && !isTalking && !isHoldingVoice && !listenModeActive && !isSttListening) {
-                        setTimeout(startWakeWordScanner, 300);
+                        setTimeout(startWakeWordScanner, 400);
                     }
                 };
 
                 wakeRecognition.start();
-            } catch(e) {}
+            } catch(e) {
+                isWakeScanning = false;
+            }
         }
 
         function toggleWakeScanner() {
             registerUserInteraction();
             wakeScannerActive = !wakeScannerActive;
             setStorage('bmo_wake_active', wakeScannerActive ? 'true' : 'false');
-            const checkWake = document.getElementById('check-wake-active');
-            if (checkWake) checkWake.checked = wakeScannerActive;
+            updateWakeUI();
 
             if (wakeScannerActive) {
                 log('🎙️ Wake word detection ENABLED ("Hey Bes" / "Bes").', 'SYS');
-                
-                const btn = document.getElementById('btn-wake-bar');
-                if (btn) btn.className = "flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-teal-500 hover:bg-teal-400 active:scale-95 border border-teal-600 rounded-xl text-slate-900 cursor-pointer transition-all flex-shrink-0 shadow-md shadow-teal-500/20";
-                const icon = document.getElementById('icon-wake-bar');
-                if (icon) icon.className = "ph-bold ph-microphone-stage text-slate-900 text-base xs:text-lg";
-                const label = document.getElementById('label-wake-bar');
-                if (label) label.className = "text-[9px] font-black leading-none mt-0.5 text-slate-900 font-mono-code";
-
                 try { startWakeWordScanner(); } catch(e){}
             } else {
                 log('🔇 Wake word detection DISABLED.', 'SYS');
+                isWakeScanning = false;
                 if (wakeRecognition) {
                     try { wakeRecognition.abort(); } catch(e){}
                     wakeRecognition = null;
                 }
-                
-                const btn = document.getElementById('btn-wake-bar');
-                if (btn) btn.className = "flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm";
-                const icon = document.getElementById('icon-wake-bar');
-                if (icon) icon.className = "ph-bold ph-microphone-stage text-slate-400 text-base xs:text-lg";
-                const label = document.getElementById('label-wake-bar');
-                if (label) label.className = "text-[9px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code";
             }
         }
 
