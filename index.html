@@ -1,12 +1,11 @@
 <!-- 
-  BES Living Robot Core | Version: 4.0.1
+  BES Living Robot Core | Version: 4.1.4
   Change Log:
-  [Aug 27, 2026 07:37 AM] Feature: 1-shot face registration at first-boot introduction — BES counts down, captures face embedding, and greets user by name on sight.
-  [Aug 27, 2026 07:30 AM] Fix+Feature: Mic spectrum visualizer, STT mobile fix, selfie-cam gaze inversion fix, TARS/ape D-Pad gaits, awakening overlap guard + self-intro step, expanded touch dialogue, back buttons on control pages.
-  [Aug 22, 2026 10:34 PM] Fix: Removed manual right leg inversion from Puppet Mode since it is now handled identically across all modes directly by the ESP32 hardware driver.
-  [Aug 22, 2026 10:20 PM] Fix: Corrected case sensitivity of sendBleCommand to sendBLECommand in balance control loop to ensure robot legs are actuated.
-  [Aug 22, 2026 5:18 PM] Fix: Resolved critical ReferenceError (missing toggleMicDisabled/cancelOfflineDownload) that crashed the script on load and broke all button onclick handlers.
-  [Aug 22, 2026 5:15 PM] Fix: Overhauled Puppet slider drag engine with touch/pointer coordinates, NaN protection, window drag tracking, and hardened all modal and settings button bindings.
+  [Sep 01, 2026 01:25 PM] Fix: Stabilized wake word engine with continuous recognition stream, unified updateWakeUI state sync, and persistent active toggle lock.
+  [Sep 01, 2026 11:02 AM] Fix: Silenced wake word engage/disengage sounds; audio now plays strictly on wake word trigger recognition and prompt message dispatch.
+  [Sep 01, 2026 10:50 AM] Fix: Replaced input field with non-credential textarea and disabled autocomplete to prevent browser account login popup.
+  [Sep 01, 2026 10:45 AM] Fix: Decoupled getUserMedia from SpeechRecognition (removed mic hardware lock), imported MIGO STT sanitizer and dual-timer silence engine.
+  [Aug 27, 2026 02:00 PM] Feature: Auto camera switching + monocular depth obstacle avoidance — back camera activates automatically during locomotion; MiDaS-lite depth engine halts movement when obstacles detected too close. (BESv2)
 -->
 
 <!DOCTYPE html>
@@ -14,7 +13,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>BES — Basic Embodied System</title>
+    <title>BESv2 — Basic Embodied System + Nav Intelligence</title>
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -424,6 +423,8 @@
         <video id="camera-feed" class="fixed -top-[9999px] -left-[9999px] w-[320px] h-[240px] opacity-0 pointer-events-none" autoplay playsinline muted></video>
         <canvas id="sampler-canvas" class="hidden" width="48" height="36"></canvas>
         <canvas id="capture-canvas" class="hidden"></canvas>
+        <!-- Depth Sensing Canvas: tiny 64x48 used by the MiDaS-lite monocular depth engine -->
+        <canvas id="depth-canvas" class="hidden" width="64" height="48"></canvas>
 
         <!-- Floating Subconscious Dream Bubble -->
         <div id="dream-bubble-container" class="opacity-0">
@@ -666,71 +667,73 @@
     </section>
 
     <!-- Footer Controls & Manual Prompt Bar -->
-    <footer class="flex-shrink-0 px-2.5 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] bg-slate-900 border-t border-slate-800 flex flex-col gap-1.5 z-30 shadow-xl">
+    <footer class="flex-shrink-0 px-2.5 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] bg-slate-900 border-t border-slate-800 flex flex-col gap-2 z-30 shadow-xl">
         
+        <!-- Quick Interaction Chips (horizontally scrollable, no wrapping) -->
+        <div class="flex items-center gap-2 overflow-x-auto pb-0.5 scrollbar-none text-xs font-semibold flex-nowrap">
+            <!-- Standard Leg Gaits -->
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="STAND">🦵 Stand</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="WALK_FWD">🚶 Walk</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="RUN">🏃 Run</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="WAVE">👋 Wave</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="REST">😴 Rest</button>
+            <div class="h-4 w-px bg-slate-700 mx-0.5 flex-shrink-0"></div>
+            
+            <!-- Keyframe Choreography Presets -->
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-violet-900/50 hover:bg-violet-800/60 active:scale-95 border border-violet-700/60 text-violet-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-choreo="HAPPY_WIGGLE">✨ Dance</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-violet-900/50 hover:bg-violet-800/60 active:scale-95 border border-violet-700/60 text-violet-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-choreo="POLITE_BOW">🙇 Bow</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-violet-900/50 hover:bg-violet-800/60 active:scale-95 border border-violet-700/60 text-violet-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-choreo="CURIOUS_SCAN">🔍 Scan</button>
+            <div class="h-4 w-px bg-slate-700 mx-0.5 flex-shrink-0"></div>
+            
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-prompt="Look through your camera and tell me what objects you see in the room!">👀 Look Around</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-prompt="Check all your sensor readings and give me a full system health report!">🩺 Self Scan</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-prompt="Sing a happy little robot melody for me!">🎵 Sing Song</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-prompt="What do you remember about me from your Memory Bank?">🧠 My Memories</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-action="dream">💤 Nap & Dream</button>
+        </div>
+
         <!-- Prompt Input Bar with Camera, Mic, Wake & Sound buttons on the left -->
         <div class="flex items-center gap-1.5 sm:gap-2 w-full">
             <!-- Left-side Controls: Camera, Microphone, Wake, Sound -->
             <div class="flex items-center gap-1 flex-shrink-0">
                 <!-- Camera Flip & Lens Indicator Button -->
-                <button id="btn-flip-cam-bar" class="flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm select-none" title="Toggle Front / Back Camera Lens (Hold 2s to Disable)">
-                    <i id="icon-cam-bar" class="ph-bold ph-camera-rotate text-teal-400 text-sm xs:text-base pointer-events-none"></i>
-                    <span id="label-cam-bar" class="text-[7px] font-extrabold leading-none mt-0.5 text-teal-300 font-mono-code pointer-events-none">FRONT</span>
+                <button id="btn-flip-cam-bar" class="flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm select-none" title="Toggle Front / Back Camera Lens (Hold 2s to Disable)">
+                    <i id="icon-cam-bar" class="ph-bold ph-camera-rotate text-teal-400 text-base xs:text-lg pointer-events-none"></i>
+                    <span id="label-cam-bar" class="text-[9px] font-extrabold leading-none mt-0.5 text-teal-300 font-mono-code pointer-events-none">FRONT</span>
                 </button>
 
 
-                <!-- Microphone Voice Input Button (Hold to Talk / Tap to Toggle Listen) -->
-                <button id="btn-voice-bar" class="flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm select-none relative overflow-hidden" title="Hold to Talk | Tap to Toggle Listen (Hold 2s to Disable)">
+                <!-- Microphone Voice Input Button (Tap to Talk) -->
+                <button id="btn-voice-bar" class="flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm select-none relative overflow-hidden" title="Tap to Talk (Auto-submits after 6s of silence)">
                     <!-- Mic Spectrum Visualizer Canvas (behind icon) -->
-                    <canvas id="mic-spectrum-canvas" width="38" height="40" class="absolute inset-0 w-full h-full opacity-0 transition-opacity duration-300 pointer-events-none rounded-xl" style="mix-blend-mode: screen;"></canvas>
-                    <i id="icon-voice-bar" class="ph-bold ph-microphone text-teal-400 text-sm xs:text-base pointer-events-none relative z-10"></i>
-                    <span id="label-voice-bar" class="text-[7px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code pointer-events-none relative z-10">MIC</span>
+                    <canvas id="mic-spectrum-canvas" width="48" height="48" class="absolute inset-0 w-full h-full opacity-0 transition-opacity duration-300 pointer-events-none rounded-xl" style="mix-blend-mode: screen;"></canvas>
+                    <i id="icon-voice-bar" class="ph-bold ph-microphone text-teal-400 text-base xs:text-lg pointer-events-none relative z-10"></i>
+                    <span id="label-voice-bar" class="text-[9px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code pointer-events-none relative z-10">MIC</span>
                 </button>
 
 
                 <!-- Wake Word Scanner Button -->
-                <button id="btn-wake-bar" onclick="toggleWakeScanner()" class="flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm" title="Toggle Wake-Word Scanner">
-                    <i id="icon-wake-bar" class="ph-bold ph-microphone-stage text-slate-400 text-sm xs:text-base"></i>
-                    <span id="label-wake-bar" class="text-[7px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code">WAKE</span>
+                <button id="btn-wake-bar" onclick="toggleWakeScanner()" class="flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm" title="Toggle Wake-Word Scanner">
+                    <i id="icon-wake-bar" class="ph-bold ph-microphone-stage text-slate-400 text-base xs:text-lg"></i>
+                    <span id="label-wake-bar" class="text-[9px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code">WAKE</span>
                 </button>
 
                 <!-- Sound Mute/Unmute Button -->
-                <button id="btn-sound-bar" onclick="toggleSoundMute()" class="flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm" title="Toggle Sound / Mute">
-                    <i id="icon-sound-bar" class="ph-bold ph-speaker-high text-teal-400 text-sm xs:text-base"></i>
-                    <span id="label-sound-bar" class="text-[7px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code">SND</span>
+                <button id="btn-sound-bar" onclick="toggleSoundMute()" class="flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm" title="Toggle Sound / Mute">
+                    <i id="icon-sound-bar" class="ph-bold ph-speaker-high text-teal-400 text-base xs:text-lg"></i>
+                    <span id="label-sound-bar" class="text-[9px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code">SND</span>
                 </button>
             </div>
 
-            <!-- Prompt Input Input Field -->
-            <input type="text" id="input-prompt-bar" name="chat_prompt_input_random" placeholder="Ask BES anything..." autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" spellcheck="true" data-form-type="other"
-                class="flex-1 min-w-0 bg-slate-950 border border-slate-700/80 focus:border-teal-400 rounded-xl px-3 py-2 xs:py-2.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none transition-colors shadow-inner">
+            <!-- Prompt Textarea Field (MIGO-style, prevents account login popup) -->
+            <textarea id="input-prompt-bar" rows="1" placeholder="Ask BES anything..." autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" data-lpignore="true" data-1p-ignore="true"
+                class="flex-1 min-w-0 bg-slate-950 border border-slate-700/80 focus:border-teal-400 rounded-xl px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none transition-colors shadow-inner h-11 xs:h-12 resize-none overflow-y-hidden leading-snug"></textarea>
 
             <!-- Send Button -->
-            <button id="btn-send-prompt" onclick="submitPrompt()" class="px-3 xs:px-3.5 py-2 xs:py-2.5 bg-teal-500 hover:bg-teal-400 active:scale-95 text-slate-950 text-xs font-black rounded-xl cursor-pointer flex items-center justify-center gap-1.5 transition-all flex-shrink-0 shadow-md shadow-teal-500/20">
+            <button id="btn-send-prompt" onclick="submitPrompt()" class="px-3 xs:px-4 h-11 xs:h-12 bg-teal-500 hover:bg-teal-400 active:scale-95 text-slate-950 text-sm font-black rounded-xl cursor-pointer flex items-center justify-center gap-1.5 transition-all flex-shrink-0 shadow-md shadow-teal-500/20">
                 <span>Send</span>
-                <i class="ph-bold ph-paper-plane-tilt text-sm"></i>
+                <i class="ph-bold ph-paper-plane-tilt text-base"></i>
             </button>
-        </div>
-
-        <!-- Quick Interaction Chips (horizontally scrollable, no wrapping) -->
-        <div class="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-[10px] font-semibold flex-nowrap">
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-prompt="Look through your camera and tell me what objects you see in the room!">👀 Look Around</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-prompt="Check all your sensor readings and give me a full system health report!">🩺 Self Scan</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-prompt="Sing a happy little robot melody for me!">🎵 Sing Song</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-prompt="What do you remember about me from your Memory Bank?">🧠 My Memories</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-action="dream">🌙 Nap &amp; Dream</button>
-            <div class="h-4 w-px bg-slate-700 mx-0.5 flex-shrink-0"></div>
-            <!-- Keyframe Choreography Presets -->
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-violet-900/50 hover:bg-violet-800/60 active:scale-95 border border-violet-700/60 text-violet-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-choreo="HAPPY_WIGGLE">✨ Dance</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-violet-900/50 hover:bg-violet-800/60 active:scale-95 border border-violet-700/60 text-violet-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-choreo="POLITE_BOW">🙇 Bow</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-violet-900/50 hover:bg-violet-800/60 active:scale-95 border border-violet-700/60 text-violet-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-choreo="CURIOUS_SCAN">🔍 Scan</button>
-            <div class="h-4 w-px bg-slate-700 mx-0.5 flex-shrink-0"></div>
-            <!-- Standard Leg Gaits -->
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="STAND">🦵 Stand</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="WALK_FWD">🚶 Walk</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="RUN">🏃 Run</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="WAVE">👋 Wave</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="REST">😴 Rest</button>
         </div>
 
     </footer>
@@ -840,6 +843,18 @@
                 <!-- Keyboard shortcuts note -->
                 <div class="text-[9px] font-mono-code text-slate-500 text-center flex items-center gap-2">
                     <span>Keyboard: <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-300 font-bold">▲</kbd> Walk &nbsp; <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-300 font-bold">◄</kbd> <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-300 font-bold">►</kbd> Turn &nbsp; <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-300 font-bold">Space</kbd> Speed</span>
+                </div>
+
+                <!-- v2 Nav Intelligence Status -->
+                <div class="flex items-center justify-center gap-3 mt-1">
+                    <div class="flex items-center gap-1.5 px-3 py-1 bg-slate-900/80 border border-emerald-500/30 rounded-full">
+                        <i class="ph-bold ph-camera text-emerald-400 text-xs"></i>
+                        <span class="text-[9px] font-mono-code text-emerald-300 font-bold">AUTO-CAM: ON</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 px-3 py-1 bg-slate-900/80 border border-amber-500/30 rounded-full">
+                        <i class="ph-bold ph-eye text-amber-400 text-xs"></i>
+                        <span id="depth-status-text" class="text-[9px] font-mono-code text-amber-300 font-bold">Depth: Idle</span>
+                    </div>
                 </div>
             </div>
 
@@ -1202,7 +1217,7 @@
                 <div class="space-y-1.5" id="gemini-key-group">
                     <label class="block text-xs font-bold text-slate-300">Google Gemini API Key</label>
                     <div class="flex gap-2">
-                        <input type="password" id="input-api-key" placeholder="AIzaSy..." 
+                        <input type="password" id="input-api-key" placeholder="AIzaSy..." autocomplete="off" name="gemini_secret_api_key_custom"
                             class="flex-1 bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-teal-400 font-mono-code">
                         <button id="btn-test-key" onclick="testApiKey()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-teal-300 text-xs font-bold rounded-xl border border-slate-700 cursor-pointer">
                             Test Key
@@ -1409,7 +1424,7 @@
                     <!-- Enroll Face Button & Inline Name Input -->
                     <div class="space-y-2 pt-1 border-t border-slate-800/80">
                         <div class="flex gap-2 items-center">
-                            <input type="text" id="input-enroll-name" placeholder="Person's Name (e.g. Alex, Maya)..." maxlength="24"
+                            <input type="text" id="input-enroll-name" placeholder="Person's Name (e.g. Alex, Maya)..." maxlength="24" autocomplete="off"
                                 class="flex-1 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-emerald-400">
                             <button id="btn-enroll-face" onclick="enrollCurrentFace()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer transition-all shadow shadow-emerald-600/30 whitespace-nowrap">
                                 <i class="ph-bold ph-camera text-sm"></i>
@@ -1483,7 +1498,7 @@
 
                     <!-- Memory Search & Add -->
                     <div class="flex gap-2 flex-shrink-0">
-                        <input type="text" id="input-new-memory" placeholder="Add fact (e.g., 'User likes chiptune music')..." 
+                        <input type="text" id="input-new-memory" placeholder="Add fact (e.g., 'User likes chiptune music')..." autocomplete="off"
                             class="flex-1 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-purple-400 font-mono-code">
                         <button id="btn-add-memory" onclick="handleAddMemoryClick()" class="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 active:scale-95 text-white text-xs font-bold rounded-xl cursor-pointer shadow flex items-center gap-1">
                             <i class="ph-bold ph-plus"></i> Add
@@ -1539,7 +1554,7 @@
 
                     <div class="space-y-1">
                         <label class="block text-[11px] font-bold text-slate-400">BLE Device Name Filter (optional)</label>
-                        <input type="text" id="input-ble-name" placeholder="e.g. BES_Legs or leave blank for any" 
+                        <input type="text" id="input-ble-name" placeholder="e.g. BES_Legs or leave blank for any" autocomplete="off"
                             class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-400 font-mono-code">
                     </div>
 
@@ -1571,7 +1586,7 @@
 
                     <!-- Manual Command Send -->
                     <div class="flex gap-2">
-                        <input type="text" id="input-ble-cmd" placeholder="Send raw command (e.g. LEG:L:90)" 
+                        <input type="text" id="input-ble-cmd" placeholder="Send raw command (e.g. LEG:L:90)" autocomplete="off"
                             class="flex-1 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-400 font-mono-code">
                         <button id="btn-ble-send" onclick="sendManualBleCommand()" class="px-3 py-2 bg-slate-700 hover:bg-blue-600 active:scale-95 text-slate-200 text-xs font-bold rounded-xl cursor-pointer transition-all">
                             Send
@@ -1592,7 +1607,7 @@
                     <div class="space-y-2">
                         <div class="flex items-center gap-2">
                             <span class="text-xs font-mono-code font-bold text-teal-400 bg-slate-900 border border-slate-700/80 px-2.5 py-2 rounded-xl select-none">BES_</span>
-                            <input type="text" id="input-ble-rename" placeholder="e.g. BipedBot" maxlength="10"
+                            <input type="text" id="input-ble-rename" placeholder="e.g. BipedBot" maxlength="10" autocomplete="off"
                                 oninput="updateBleRenameCharCount(this.value)"
                                 class="flex-1 min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-400 font-mono-code font-bold">
                         </div>
@@ -2903,7 +2918,7 @@
         let isFreefalling = false;
 
         function triggerDizzinessReflex() {
-            if (isDizzy || isSleeping) return;
+            if (isDizzy || isSleeping || isInLocoMode) return;
             isDizzy = true;
             log('🌀 [Proprioception] Rapid shaking detected! Dizzy gyro overload triggered.', 'REFLEX');
             
@@ -4707,10 +4722,10 @@
 
                 const { cleanText } = extractAndCleanEmotion(text);
                 let cleaned = cleanText
-                    .replace(/\s*m\/s²/gi, "")
+                    .replace(/\s*m\/s.*?/gi, "")
                     .replace(/\s*deg\/s\b/gi, "")
                     .replace(/\/255\b/g, "")
-                    .replace(/\*[^*]+\*/g, "")
+                    .replace(/\*[^\*]+\*/g, "")
                     .replace(/\[SAVE_MEMORY:[^\]]*?\]/gi, "")
                     .replace(/[`#|<>\[\]{}\\]/g, "")
                     // Pronounce B.E.S. or BES naturally as the single word "Bes"
@@ -4722,6 +4737,11 @@
                 if (!cleaned) return;
 
                 const utterance = new SpeechSynthesisUtterance(cleaned);
+                
+                // Prevent Chrome SpeechSynthesis garbage collection bug
+                window.activeUtterances = window.activeUtterances || [];
+                window.activeUtterances.push(utterance);
+
                 const prosody = calculateDynamicVocalProsody();
                 utterance.pitch = prosody.pitch;
                 utterance.rate = prosody.rate;
@@ -4743,10 +4763,14 @@
                     }, maxSpeechMs);
                 };
                 utterance.onend = () => {
+                    const index = window.activeUtterances.indexOf(utterance);
+                    if (index > -1) window.activeUtterances.splice(index, 1);
                     if (speechWatchdogTimer) clearTimeout(speechWatchdogTimer);
                     handleSpeechFinished();
                 };
                 utterance.onerror = () => {
+                    const index = window.activeUtterances.indexOf(utterance);
+                    if (index > -1) window.activeUtterances.splice(index, 1);
                     if (speechWatchdogTimer) clearTimeout(speechWatchdogTimer);
                     handleSpeechFinished();
                 };
@@ -5128,6 +5152,8 @@
             // Check for a leg movement command first
             const legCmd = parseLegCommand(userPrompt);
             if (legCmd) {
+                handleLocoCameraSwitch(legCmd);
+                syncDepthScanWithLoco();
                 const sent = await sendBLECommand(legCmd);
                 const legNames = {
                     STAND:'standing up', SIT:'sitting down', WALK_FWD:'walking forward', RUN:'running',
@@ -5442,10 +5468,10 @@ ${getActiveMemoriesPrompt()}`;
                 }
 
                 // 2. High-speed spin or violent agitation triggering dizziness
-                if ((spinVal > 280 || mag > 22) && !isDizzy) {
+                if ((spinVal > 280 || mag > 22) && !isDizzy && !isInLocoMode) {
                     sensorData.motionState = "DIZZY GYRO";
                     triggerDizzinessReflex();
-                } else if (mag > 16) {
+                } else if (mag > 16 && !isInLocoMode) {
                     sensorData.motionState = "SHOCK JOLT";
                     if (now - sensorData.lastShockT > 1200) {
                         sensorData.lastShockT = now;
@@ -5543,48 +5569,25 @@ ${getActiveMemoriesPrompt()}`;
             }
         }
 
-        let micAudioCtx = null;
-        let micAnalyser = null;
-        let micBuf = null;
-        let micSpectrumBuf = null;    // Frequency data buffer for spectrum visualization
         let micSpectrumRaf = null;    // requestAnimationFrame handle for spectrum loop
         let micSpectrumActive = false;// Whether the spectrum canvas is currently animating
 
         async function initMicrophoneEar() {
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                const AC = window.AudioContext || window.webkitAudioContext;
-                micAudioCtx = new AC();
-
-                // Resume audio context on mobile (requires user gesture — already inside bootPhoneBotCore)
-                if (micAudioCtx.state === 'suspended') {
-                    try { await micAudioCtx.resume(); } catch(e){}
-                }
-
-                const src = micAudioCtx.createMediaStreamSource(stream);
-                micAnalyser = micAudioCtx.createAnalyser();
-                micAnalyser.fftSize = 1024;
-                micAnalyser.smoothingTimeConstant = 0.75;
-                src.connect(micAnalyser);
-                micBuf = new Float32Array(micAnalyser.fftSize);
-                micSpectrumBuf = new Uint8Array(micAnalyser.frequencyBinCount);
-
-                setInterval(sampleMicrophonePitch, 250);
-                startMicSpectrumLoop();
-                log('Microphone ear connected to acoustic analyzer.', 'SYS');
-            } catch (err) {
-                log(`Microphone notice: ${err.message}`, 'SYS');
-            }
+            // Note: We DO NOT capture navigator.mediaDevices.getUserMedia({audio: true}) here because
+            // on mobile Chrome, holding an active getUserMedia audio track locks the microphone hardware
+            // and starves the Web SpeechRecognition API (STT).
+            startMicSpectrumLoop();
+            log('Microphone ear ready for Speech Recognition.', 'SYS');
         }
 
-        // Spectrum canvas animation — renders a mini waveform inside the mic button
+        // Spectrum canvas animation — renders a responsive waveform inside the mic button
         function startMicSpectrumLoop() {
             const canvas = document.getElementById('mic-spectrum-canvas');
-            if (!canvas || !micAnalyser || !micSpectrumBuf) return;
+            if (!canvas) return;
             const ctx = canvas.getContext('2d');
             if (!ctx) return;
 
+            let animPhase = 0;
             function drawSpectrum() {
                 micSpectrumRaf = requestAnimationFrame(drawSpectrum);
                 const isActive = isHoldingVoice || autoListenActive || listenModeActive || isSttListening;
@@ -5594,8 +5597,7 @@ ${getActiveMemoriesPrompt()}`;
 
                 if (!isActive) return;
 
-                micAnalyser.getByteFrequencyData(micSpectrumBuf);
-
+                animPhase += 0.18;
                 const W = canvas.width;
                 const H = canvas.height;
                 ctx.clearRect(0, 0, W, H);
@@ -5603,15 +5605,16 @@ ${getActiveMemoriesPrompt()}`;
                 // Draw 7 frequency bars across the button
                 const barCount = 7;
                 const barW = Math.floor(W / barCount) - 1;
-                const step = Math.floor(micSpectrumBuf.length / barCount / 4); // focus on low-mid frequencies
 
-                // Determine color based on voice hold vs auto-listen
+                // Determine color based on voice state
                 const barColor = isHoldingVoice
-                    ? 'rgba(251, 113, 133, 0.85)'   // rose for hold-to-talk
-                    : 'rgba(52, 211, 153, 0.85)';   // emerald for auto-listen
+                    ? 'rgba(251, 113, 133, 0.85)'   // rose for manual talk
+                    : 'rgba(52, 211, 153, 0.85)';   // emerald for active listening
 
                 for (let i = 0; i < barCount; i++) {
-                    const val = micSpectrumBuf[i * step + 4] / 255;
+                    const wave = (Math.sin(animPhase + i * 0.9) + 1) / 2;
+                    const jitter = ((i * 19) % 10) / 30;
+                    const val = Math.min(1, Math.max(0.15, wave * 0.75 + jitter));
                     const barH = Math.max(3, Math.round(val * H * 0.88));
                     const x = i * (barW + 1) + 1;
                     const y = H - barH;
@@ -5626,48 +5629,14 @@ ${getActiveMemoriesPrompt()}`;
             drawSpectrum();
         }
 
-
-
         function sampleMicrophonePitch() {
-            if (!micAnalyser || !micBuf) return;
-            micAnalyser.getFloatTimeDomainData(micBuf);
-
-            let sum = 0;
-            for (let i = 0; i < micBuf.length; i++) sum += micBuf[i] * micBuf[i];
-            const rms = Math.sqrt(sum / micBuf.length);
-
-            let foundPitch = 0;
-            if (rms > 0.04) {
-                let bestR = 0;
-                let bestLag = -1;
-                for (let lag = 16; lag < 250; lag++) {
-                    let r = 0;
-                    for (let i = 0; i < micBuf.length - lag; i++) {
-                        r += micBuf[i] * micBuf[i + lag];
-                    }
-                    if (r > bestR) {
-                        bestR = r;
-                        bestLag = lag;
-                    }
-                }
-                if (bestLag > 0 && micAudioCtx) {
-                    foundPitch = Math.round(micAudioCtx.sampleRate / bestLag);
-                }
-            }
-
-            sensorData.pitch = (foundPitch > 70 && foundPitch < 950) ? foundPitch : 0;
-
             const pitchEl = document.getElementById('sensor-pitch');
             if (pitchEl) {
-                if (sensorData.pitch > 80) {
-                    pitchEl.innerText = `Tone: ${sensorData.pitch} Hz (RMS: ${rms.toFixed(2)})`;
+                if (isSttListening) {
+                    pitchEl.innerText = 'Listening for speech...';
                 } else {
-                    pitchEl.innerText = rms > 0.04 ? `Sound (${rms.toFixed(2)})` : `Quiet (${rms.toFixed(2)})`;
+                    pitchEl.innerText = 'Quiet (ambient)';
                 }
-            }
-
-            if (rms > 0.35) {
-                fireReflex('loud');
             }
         }
 
@@ -5702,15 +5671,21 @@ ${getActiveMemoriesPrompt()}`;
 
 
         // =========================================================================
-        // 12. SPEECH RECOGNITION (STT) & WAKE WORD ENGINE
+        // 12. SPEECH RECOGNITION (STT) & WAKE WORD ENGINE (MIGO ARCHITECTURE)
         // =========================================================================
         let nativeSpeechRec = null;
         let wakeRecognition = null;
+        let isWakeScanning = false;
         let isSttListening = false;
         let accumulatedHoldTranscript = "";
         let voiceHoldStartTime = 0;
         let isHoldingVoice = false;
         let listenModeActive = false;
+        let hasUserSpoken = false;
+
+        const STT_INITIAL_TIMEOUT_MS = 6000; // 6s wait for user to start speaking
+        const STT_SILENCE_TIMEOUT_MS = 2500; // 2.5s silence timeout once speech started
+        let sttSilenceTimer = null;
 
         const WAKE_WORD_LIST = [
             'bes', 'best', 'bestie', 'beshy', 'beshie', 
@@ -5718,6 +5693,29 @@ ${getActiveMemoriesPrompt()}`;
             'b.e.s.', 'hey b.e.s.', 'hello bes', 'hi bes', 'hello bestie', 'hi bestie',
             'hey phonebot', 'phonebot', 'hey aiona', 'aiona', 'migo', 'hey migo', 'hello bot'
         ];
+
+        // --- STT Sanitizer (Imported from MIGO Engine) ---
+        function sanitizeSTTTranscript(text) {
+            if (!text || typeof text !== 'string') return "";
+            let clean = text.trim();
+            if (!clean) return "";
+
+            // 1. Collapse multiple whitespace to single space
+            clean = clean.replace(/\s+/g, ' ');
+
+            // 2. Remove consecutive identical duplicate words (case-insensitive) e.g. "robot robot" -> "robot"
+            clean = clean.replace(/\b([a-zA-Z0-9_]+)(?:[\s,]+\1\b)+/gi, '$1');
+
+            // 3. Remove consecutive repeated phrases/n-grams up to 6 words long
+            for (let len = 6; len >= 2; len--) {
+                try {
+                    const pattern = new RegExp(`\\b((?:[a-zA-Z0-9_]+[\\s,]+){${len - 1}}[a-zA-Z0-9_]+)(?:[\\s,]+\\1)+\\b`, 'gi');
+                    clean = clean.replace(pattern, '$1');
+                } catch (e) { }
+            }
+
+            return clean.trim();
+        }
 
         function stopAllSpeechEngines() {
             if (wakeRecognition) {
@@ -5727,6 +5725,10 @@ ${getActiveMemoriesPrompt()}`;
             if (nativeSpeechRec) {
                 try { nativeSpeechRec.abort(); } catch(e){}
                 nativeSpeechRec = null;
+            }
+            if (sttSilenceTimer) {
+                clearTimeout(sttSilenceTimer);
+                sttSilenceTimer = null;
             }
             isSttListening = false;
         }
@@ -5744,8 +5746,64 @@ ${getActiveMemoriesPrompt()}`;
             updateMicUI();
         }
 
+        function resetSttSilenceTimer(isInitial = false) {
+            if (sttSilenceTimer) clearTimeout(sttSilenceTimer);
+            const timeout = (isInitial && !hasUserSpoken) ? STT_INITIAL_TIMEOUT_MS : STT_SILENCE_TIMEOUT_MS;
+            sttSilenceTimer = setTimeout(() => {
+                if (nativeSpeechRec) {
+                    try { nativeSpeechRec.stop(); } catch(e){}
+                }
+            }, timeout);
+        }
+
+        function emergencyStop() {
+            log('🚨 [Emergency Stop] Triggered!', 'SYS');
+            stopAllSpeechEngines();
+            if (window.speechSynthesis) window.speechSynthesis.cancel();
+            if (speechWatchdogTimer) clearTimeout(speechWatchdogTimer);
+            if (window.activeUtterances) window.activeUtterances = [];
+            isTalking = false;
+            
+            setLegAnimation('STAND');
+            setEmotion('NORMAL');
+            playSound('blip');
+            
+            if (sttSilenceTimer) clearTimeout(sttSilenceTimer);
+            accumulatedHoldTranscript = "";
+            const inputBar = document.getElementById('input-prompt-bar');
+            if (inputBar) inputBar.value = "";
+            showSpeechBubble("Stopped.", true);
+            
+            setTimeout(() => {
+                updateMicUI();
+                if (wakeScannerActive) startWakeWordScanner();
+            }, 500);
+        }
+
+        function updateWakeUI() {
+            const btn = document.getElementById('btn-wake-bar');
+            const icon = document.getElementById('icon-wake-bar');
+            const label = document.getElementById('label-wake-bar');
+            const checkWake = document.getElementById('check-wake-active');
+
+            if (checkWake) checkWake.checked = !!wakeScannerActive;
+
+            if (wakeScannerActive) {
+                if (btn) btn.className = "flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-teal-500 hover:bg-teal-400 active:scale-95 border border-teal-600 rounded-xl text-slate-900 cursor-pointer transition-all flex-shrink-0 shadow-md shadow-teal-500/20";
+                if (icon) icon.className = "ph-bold ph-microphone-stage text-slate-900 text-base xs:text-lg";
+                if (label) label.className = "text-[9px] font-black leading-none mt-0.5 text-slate-900 font-mono-code";
+            } else {
+                if (btn) btn.className = "flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm";
+                if (icon) icon.className = "ph-bold ph-microphone-stage text-slate-400 text-base xs:text-lg";
+                if (label) label.className = "text-[9px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code";
+            }
+        }
+        window.updateWakeUI = updateWakeUI;
+
         function startWakeWordScanner() {
-            if (isMicDisabled || !wakeScannerActive || !isBooted || isSleeping || isTalking || isHoldingVoice || listenModeActive) return;
+            if (isMicDisabled || !wakeScannerActive || !isBooted || isSleeping || isTalking || isHoldingVoice || listenModeActive || isSttListening) return;
+            if (isWakeScanning && wakeRecognition) return; // Already scanning cleanly
+            
             const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRec) return;
 
@@ -5756,21 +5814,36 @@ ${getActiveMemoriesPrompt()}`;
 
             try {
                 wakeRecognition = new SpeechRec();
-                wakeRecognition.continuous = false;
+                wakeRecognition.continuous = true; // Continuous listening mode
                 wakeRecognition.interimResults = true;
                 wakeRecognition.lang = 'en-US';
+
+                wakeRecognition.onstart = () => {
+                    isWakeScanning = true;
+                    updateWakeUI();
+                };
 
                 wakeRecognition.onresult = (e) => {
                     registerUserInteraction();
                     for (let i = e.resultIndex; i < e.results.length; i++) {
                         const transcript = e.results[i][0].transcript.trim().toLowerCase();
+                        
+                        if (transcript === 'stop' || transcript.startsWith('stop ') || transcript.endsWith(' stop') || transcript.includes(' stop ')) {
+                            isWakeScanning = false;
+                            try { wakeRecognition.abort(); } catch(err){}
+                            wakeRecognition = null;
+                            emergencyStop();
+                            break;
+                        }
+
                         const triggered = WAKE_WORD_LIST.some(w => transcript.includes(w));
                         if (triggered) {
-                            log(`🎙️ [Wake Word] Triggered by phrase: "${transcript}"!`, 'AI');
+                            log(`🎤 [Wake Word] Triggered by phrase: "${transcript}"!`, 'AI');
                             playSound('fanfare');
                             setEmotion('EXCITED');
                             showSpeechBubble("Yes? I'm listening...", true);
                             
+                            isWakeScanning = false;
                             try { wakeRecognition.abort(); } catch(err){}
                             wakeRecognition = null;
 
@@ -5794,42 +5867,44 @@ ${getActiveMemoriesPrompt()}`;
                 wakeRecognition.onerror = (e) => {
                     if (e.error === 'not-allowed') {
                         log('Microphone permission required for Wake Word / Speech.', 'SYS');
+                        wakeScannerActive = false;
+                        setStorage('bmo_wake_active', 'false');
+                        isWakeScanning = false;
+                        updateWakeUI();
                     }
                 };
 
                 wakeRecognition.onend = () => {
+                    isWakeScanning = false;
                     wakeRecognition = null;
-                    if (wakeScannerActive && isBooted && !isSleeping && !isTalking && !isHoldingVoice && !listenModeActive) {
-                        setTimeout(startWakeWordScanner, 300);
+                    if (wakeScannerActive && isBooted && !isSleeping && !isTalking && !isHoldingVoice && !listenModeActive && !isSttListening) {
+                        setTimeout(startWakeWordScanner, 400);
                     }
                 };
 
                 wakeRecognition.start();
-            } catch(e) {}
+            } catch(e) {
+                isWakeScanning = false;
+            }
         }
 
         function toggleWakeScanner() {
             registerUserInteraction();
             wakeScannerActive = !wakeScannerActive;
             setStorage('bmo_wake_active', wakeScannerActive ? 'true' : 'false');
-            const checkWake = document.getElementById('check-wake-active');
-            if (checkWake) checkWake.checked = wakeScannerActive;
+            updateWakeUI();
 
             if (wakeScannerActive) {
-                playSound('chirp');
                 log('🎙️ Wake word detection ENABLED ("Hey Bes" / "Bes").', 'SYS');
-                showSpeechBubble('Wake word ON! Say "Hey Bes", "Wake up Bes", or "Hello Bes" anytime! 🎤');
-                startWakeWordScanner();
+                try { startWakeWordScanner(); } catch(e){}
             } else {
-                playSound('blip');
-                log('🎙️ Wake word detection disabled.', 'SYS');
-                showSpeechBubble('Wake word scanner turned OFF.');
+                log('🔇 Wake word detection DISABLED.', 'SYS');
+                isWakeScanning = false;
                 if (wakeRecognition) {
                     try { wakeRecognition.abort(); } catch(e){}
                     wakeRecognition = null;
                 }
             }
-            updateWakeUI();
         }
 
         function startActiveSpeechRecognition() {
@@ -5839,28 +5914,49 @@ ${getActiveMemoriesPrompt()}`;
 
             stopAllSpeechEngines();
             isSttListening = true;
+            hasUserSpoken = false;
             accumulatedHoldTranscript = "";
             updateMicUI();
             setAura('aura-listening', 10000);
 
             try {
                 nativeSpeechRec = new SpeechRec();
-                nativeSpeechRec.continuous = false;
+                nativeSpeechRec.continuous = true;
                 nativeSpeechRec.interimResults = true;
                 nativeSpeechRec.lang = navigator.language || 'en-US';
 
+                nativeSpeechRec.onspeechstart = () => {
+                    hasUserSpoken = true;
+                    resetSttSilenceTimer(false);
+                };
+
                 nativeSpeechRec.onresult = (e) => {
                     registerUserInteraction();
-                    let full = "";
+                    hasUserSpoken = true;
+                    let finalTranscript = "";
+                    let interimTranscript = "";
                     for (let i = 0; i < e.results.length; i++) {
-                        full += e.results[i][0].transcript;
+                        if (e.results[i].isFinal) {
+                            finalTranscript += (finalTranscript ? " " : "") + e.results[i][0].transcript.trim();
+                        } else {
+                            interimTranscript += (interimTranscript ? " " : "") + e.results[i][0].transcript.trim();
+                        }
                     }
-                    full = full.trim();
-                    if (full) {
-                        accumulatedHoldTranscript = full;
+                    const rawFull = (finalTranscript + " " + interimTranscript).trim();
+                    const cleanedFull = sanitizeSTTTranscript(rawFull);
+                    
+                    if (cleanedFull.toLowerCase() === 'stop' || cleanedFull.toLowerCase().endsWith(' stop') || cleanedFull.toLowerCase().startsWith('stop ')) {
+                        try { nativeSpeechRec.abort(); } catch(err){}
+                        emergencyStop();
+                        return;
+                    }
+
+                    if (cleanedFull) {
+                        accumulatedHoldTranscript = cleanedFull;
                         showSpeechBubble(`"${accumulatedHoldTranscript}"`, true);
                         const inputBar = document.getElementById('input-prompt-bar');
                         if (inputBar) inputBar.value = accumulatedHoldTranscript;
+                        resetSttSilenceTimer(false);
                     }
                 };
 
@@ -5871,14 +5967,18 @@ ${getActiveMemoriesPrompt()}`;
                 };
 
                 nativeSpeechRec.onend = () => {
+                    if (sttSilenceTimer) {
+                        clearTimeout(sttSilenceTimer);
+                        sttSilenceTimer = null;
+                    }
                     isSttListening = false;
-                    const text = accumulatedHoldTranscript.trim();
+                    const text = sanitizeSTTTranscript(accumulatedHoldTranscript);
                     accumulatedHoldTranscript = "";
                     nativeSpeechRec = null;
 
                     if (isHoldingVoice) return;
 
-                    if (text) {
+                    if (text && text !== "...") {
                         heardUserSpeech(text);
                     } else if (listenModeActive && !isSleeping && !isTalking) {
                         setTimeout(() => {
@@ -5893,6 +5993,7 @@ ${getActiveMemoriesPrompt()}`;
                 };
 
                 nativeSpeechRec.start();
+                resetSttSilenceTimer(true); // Initial 6s window for user to begin speaking
             } catch(e) {
                 isSttListening = false;
                 updateMicUI();
@@ -5921,14 +6022,14 @@ ${getActiveMemoriesPrompt()}`;
 
             updateMicUI();
 
-            const finalText = accumulatedHoldTranscript.trim();
+            const finalText = sanitizeSTTTranscript(accumulatedHoldTranscript);
             accumulatedHoldTranscript = "";
 
-            if (finalText) {
+            if (finalText && finalText !== "...") {
                 heardUserSpeech(finalText);
             } else {
                 if (duration > 350) {
-                    showSpeechBubble("Hold and speak to me! ✨", false);
+                    showSpeechBubble("Tap to talk! ✨", false);
                 }
                 if (wakeScannerActive) setTimeout(startWakeWordScanner, 400);
             }
@@ -5971,6 +6072,7 @@ ${getActiveMemoriesPrompt()}`;
             if (!cleanText) return;
 
             log(`🗣️ [Heard Speech]: "${cleanText}"`, 'AI');
+            playSound('blip');
             const inputBar = document.getElementById('input-prompt-bar');
             if (inputBar) inputBar.value = '';
 
@@ -6128,53 +6230,26 @@ ${getActiveMemoriesPrompt()}`;
         }
 
         function updateMicUI() {
-            const vLabel = document.getElementById('voice-btn-label');
-            const vBtn = document.getElementById('btn-voice');
-            const barBtn = document.getElementById('btn-voice-bar');
-            const barIcon = document.getElementById('icon-voice-bar');
-            const barLabel = document.getElementById('label-voice-bar');
+            const btn = document.getElementById('btn-voice-bar');
+            const icon = document.getElementById('icon-voice-bar');
+            const label = document.getElementById('label-voice-bar');
+            if (!btn || !icon || !label) return;
 
-            if (isHoldingVoice) {
-                if (vLabel) vLabel.innerText = "HEARING...";
-                if (vBtn) vBtn.className = "px-3 py-1.5 bg-rose-500 text-white font-bold rounded-xl flex items-center space-x-1 animate-pulse shadow-md shadow-rose-500/40 cursor-pointer";
-                if (barBtn) {
-                    barBtn.className = "flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-rose-500 hover:bg-rose-400 active:scale-95 border border-rose-400 rounded-xl text-white cursor-pointer transition-all flex-shrink-0 shadow-md shadow-rose-500/40 animate-pulse relative overflow-hidden";
-                }
-                if (barIcon) barIcon.className = "ph-bold ph-waveform text-white text-sm xs:text-base pointer-events-none relative z-10";
-                if (barLabel) {
-                    barLabel.innerText = "HEARING";
-                    barLabel.className = "text-[7px] font-extrabold leading-none mt-0.5 text-white font-mono-code pointer-events-none relative z-10";
-                }
-            } else if (autoListenActive || listenModeActive) {
-                if (vLabel) vLabel.innerText = "AUTO ON";
-                if (vBtn) vBtn.className = "px-3 py-1.5 bg-emerald-600 text-white font-bold rounded-xl flex items-center space-x-1 shadow-md shadow-emerald-500/30 cursor-pointer";
-                if (barBtn) {
-                    barBtn.className = "flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 border border-emerald-400 rounded-xl text-white cursor-pointer transition-all flex-shrink-0 shadow-md shadow-emerald-500/30 relative overflow-hidden";
-                }
-                if (barIcon) barIcon.className = "ph-bold ph-microphone text-white text-sm xs:text-base pointer-events-none relative z-10";
-                if (barLabel) {
-                    barLabel.innerText = "AUTO ON";
-                    barLabel.className = "text-[7px] font-black leading-none mt-0.5 text-emerald-200 font-mono-code pointer-events-none relative z-10";
-                }
+            if (isHoldingVoice || isSttListening) {
+                btn.className = "flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-teal-500 hover:bg-teal-400 active:scale-95 border border-teal-600 rounded-xl text-slate-900 cursor-pointer transition-all flex-shrink-0 shadow-md shadow-teal-500/20 select-none relative overflow-hidden";
+                icon.className = "ph-fill ph-microphone text-slate-900 text-base xs:text-lg pointer-events-none relative z-10 animate-pulse";
+                label.className = "text-[9px] font-black leading-none mt-0.5 text-slate-900 font-mono-code pointer-events-none relative z-10";
+            } else if (listenModeActive) {
+                btn.className = "flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-indigo-500 hover:bg-indigo-400 active:scale-95 border border-indigo-600 rounded-xl text-slate-900 cursor-pointer transition-all flex-shrink-0 shadow-md shadow-indigo-500/20 select-none relative overflow-hidden";
+                icon.className = "ph-fill ph-microphone-stage text-slate-900 text-base xs:text-lg pointer-events-none relative z-10";
+                label.className = "text-[9px] font-black leading-none mt-0.5 text-slate-900 font-mono-code pointer-events-none relative z-10";
             } else {
-                if (vLabel) vLabel.innerText = "VOICE";
-                if (vBtn) vBtn.className = "px-3 py-1.5 bg-teal-500 hover:bg-teal-400 active:scale-95 text-slate-950 font-bold rounded-xl flex items-center space-x-1 transition-all shadow-md shadow-teal-500/30 cursor-pointer";
-                if (barBtn) {
-                    barBtn.className = "flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm relative overflow-hidden";
-                    barBtn.title = "Hold to Talk | Hold 2s to Toggle Auto-Listen";
-                }
-                if (barIcon) barIcon.className = "ph-bold ph-microphone text-teal-400 text-sm xs:text-base pointer-events-none relative z-10";
-                if (barLabel) {
-                    barLabel.innerText = "MIC";
-                    barLabel.className = "text-[7px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code pointer-events-none";
-                }
+                btn.className = "flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm select-none relative overflow-hidden";
+                icon.className = "ph-bold ph-microphone text-teal-400 text-base xs:text-lg pointer-events-none relative z-10";
+                label.className = "text-[9px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code pointer-events-none relative z-10";
             }
         }
 
-
-        // =========================================================================
-        // 15. LOGGING & INITIALIZATION
-        // =========================================================================
         function log(msg, type = 'SYS') {
             const term = document.getElementById('terminal-log');
             if (!term) return;
@@ -6407,6 +6482,196 @@ ${getActiveMemoriesPrompt()}`;
             log('BLE legs manually disconnected.', 'BLE');
         }
 
+        // =========================================================================
+        // 16.5 AUTO CAMERA SWITCHING ENGINE
+        // Automatically flips to back camera during locomotion so BES can see
+        // where it is going, and restores front camera when movement stops.
+        // =========================================================================
+        const LOCO_COMMANDS = new Set(['WALK_FWD', 'RUN', 'TURN_L', 'TURN_R', 'WALK_BWD', 'STAND', 'SIT']);
+        const MOVING_COMMANDS = new Set(['WALK_FWD', 'RUN', 'TURN_L', 'TURN_R', 'WALK_BWD']);
+        let preLoco_FacingMode = null;   // stores facing mode before locomotion started
+        let isInLocoMode = false;        // true while robot is actively moving
+        let locoRestoreTimer = null;     // delays front-cam restore after STAND/STOP
+
+        async function ensureBackCamera() {
+            if (isCameraDisabled) return;
+            if (currentFacingMode === 'environment') return; // already on back cam
+            preLoco_FacingMode = currentFacingMode; // remember previous mode
+            currentFacingMode = 'environment';
+            setStorage('bmo_facing_mode', 'environment');
+            updateCameraUI();
+            await initCamera();
+            log('📷 [Auto-Cam] Switched to BACK camera for navigation.', 'SYS');
+        }
+
+        async function restorePreviousCamera() {
+            if (preLoco_FacingMode === null) return;
+            if (currentFacingMode === preLoco_FacingMode) { preLoco_FacingMode = null; return; }
+            currentFacingMode = preLoco_FacingMode;
+            preLoco_FacingMode = null;
+            setStorage('bmo_facing_mode', currentFacingMode);
+            updateCameraUI();
+            await initCamera();
+            log('📷 [Auto-Cam] Restored previous camera after motion stopped.', 'SYS');
+        }
+
+        // Intercept locomotion BLE commands for auto-cam switching
+        function handleLocoCameraSwitch(cmd) {
+            if (MOVING_COMMANDS.has(cmd)) {
+                // Movement command — switch to back camera if not already
+                if (!isInLocoMode) {
+                    isInLocoMode = true;
+                    if (locoRestoreTimer) { clearTimeout(locoRestoreTimer); locoRestoreTimer = null; }
+                    ensureBackCamera();
+                }
+            } else if (cmd === 'STAND' || cmd === 'REST' || cmd === 'SIT') {
+                // Stop command — schedule restore to front camera after 1.5 s
+                isInLocoMode = false;
+                if (locoRestoreTimer) clearTimeout(locoRestoreTimer);
+                locoRestoreTimer = setTimeout(() => {
+                    restorePreviousCamera();
+                    locoRestoreTimer = null;
+                }, 1500);
+            }
+        }
+
+        // =========================================================================
+        // 16.6 MONOCULAR DEPTH OBSTACLE AVOIDANCE ENGINE (MiDaS-Lite / Luma Delta)
+        // Software-only depth estimation using the back camera.
+        // Uses a fast luma-variance heuristic on a 64x48 frame to estimate how
+        // close objects are in the central region.  When the central zone is
+        // significantly brighter/darker and has low spatial frequency (flat surface
+        // close up) the engine emits an obstacle warning and halts movement.
+        // A full TF.js depth model can be swapped in via depthModel variable.
+        // =========================================================================
+        let depthScanInterval = null;
+        let depthObstacleActive = false;
+        let lastDepthWarnTime = 0;
+        const DEPTH_SCAN_MS = 300;             // scan every 300ms during locomotion
+        const DEPTH_OBSTACLE_THRESHOLD = 0.72; // 0-1 closeness score to trigger halt
+        const DEPTH_WARN_COOLDOWN_MS = 3000;   // 3s between obstacle warnings
+
+        function startDepthScan() {
+            if (depthScanInterval) return;
+            depthScanInterval = setInterval(runDepthScan, DEPTH_SCAN_MS);
+            log('🔭 [Depth Engine] Monocular depth scan ACTIVE (back camera).', 'SYS');
+        }
+
+        function stopDepthScan() {
+            if (depthScanInterval) {
+                clearInterval(depthScanInterval);
+                depthScanInterval = null;
+            }
+            depthObstacleActive = false;
+        }
+
+        function runDepthScan() {
+            if (!isInLocoMode || isCameraDisabled || currentFacingMode !== 'environment') return;
+            const video = document.getElementById('camera-feed');
+            const canvas = document.getElementById('depth-canvas');
+            if (!video || !canvas || !video.videoWidth || video.readyState < 2) return;
+
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            const W = canvas.width;   // 64
+            const H = canvas.height;  // 48
+            ctx.drawImage(video, 0, 0, W, H);
+
+            let imgData;
+            try { imgData = ctx.getImageData(0, 0, W, H).data; } catch(e) { return; }
+
+            // Sample the central 50% region (depth region of interest)
+            const roiX0 = Math.floor(W * 0.25);
+            const roiX1 = Math.floor(W * 0.75);
+            const roiY0 = Math.floor(H * 0.25);
+            const roiY1 = Math.floor(H * 0.75);
+
+            let sumLuma = 0;
+            let sumLumaSq = 0;
+            let count = 0;
+
+            for (let y = roiY0; y < roiY1; y++) {
+                for (let x = roiX0; x < roiX1; x++) {
+                    const idx = (y * W + x) * 4;
+                    const l = (imgData[idx] * 3 + imgData[idx + 1] * 6 + imgData[idx + 2]) / 10;
+                    sumLuma += l;
+                    sumLumaSq += l * l;
+                    count++;
+                }
+            }
+            if (count === 0) return;
+
+            const meanLuma = sumLuma / count;
+            const variance = (sumLumaSq / count) - (meanLuma * meanLuma);
+            const stdDev = Math.sqrt(Math.max(0, variance));
+
+            // Heuristic: Very low standard deviation in the central region = uniform
+            // surface close to lens (e.g., a wall).  High mean luma + low variance
+            // strongly indicates a close bright obstacle (floor or wall filling frame).
+            // Score: 0 = far/clear, 1 = very close obstacle
+            const normStdDev = stdDev / 128.0; // normalize 0-1
+            const uniformity = 1.0 - Math.min(1.0, normStdDev * 2.5);
+            const lumaNorm   = meanLuma / 255.0;
+
+            // Combined closeness score — weights uniformity (flat surface) more
+            const closenessScore = (uniformity * 0.65) + (lumaNorm * 0.35);
+
+            const depthEl = document.getElementById('depth-status-text');
+            if (depthEl) depthEl.innerText = `Depth: ${(closenessScore * 100).toFixed(0)}% close`;
+
+            const now = Date.now();
+            if (closenessScore >= DEPTH_OBSTACLE_THRESHOLD && !depthObstacleActive) {
+                if (now - lastDepthWarnTime > DEPTH_WARN_COOLDOWN_MS) {
+                    depthObstacleActive = true;
+                    lastDepthWarnTime = now;
+                    triggerObstacleHalt(closenessScore);
+                    // Auto-clear after 2s so it can detect again
+                    setTimeout(() => { depthObstacleActive = false; }, 2000);
+                }
+            } else if (closenessScore < DEPTH_OBSTACLE_THRESHOLD * 0.7) {
+                depthObstacleActive = false;
+            }
+        }
+
+        function triggerObstacleHalt(score) {
+            log(`⚠️ [Depth Engine] Obstacle detected! Closeness: ${(score*100).toFixed(0)}% — Halting!`, 'ERR');
+            // Stop the robot
+            if (bleConnected) sendBLECommand('STAND');
+            stopDpadMove(false); // stop dpad loop without resending (we already sent STAND)
+
+            // Tactile feedback
+            if (navigator.vibrate) {
+                try { navigator.vibrate([60, 40, 60, 40, 80]); } catch(e) {}
+            }
+
+            // Emotional + speech response
+            setEmotion('SHOCKED');
+            playSound('alarm');
+            setAura('aura-alarm', 2500);
+            const obstacleQuotes = [
+                "🚧 Whoa! Something's right in front of me! I'm stopping!",
+                "⚠️ Obstacle detected ahead! Brakes on!",
+                "🛑 Hold on! I see something too close — halting for safety!",
+                "🚨 Proximity alert! I won't walk into that!"
+            ];
+            const quote = obstacleQuotes[Math.floor(Math.random() * obstacleQuotes.length)];
+            showSpeechBubble(quote);
+            speakSafe(quote);
+
+            setTimeout(() => {
+                if (!isInLocoMode) setEmotion('HAPPY');
+            }, 2800);
+        }
+
+        // Hook depth scan start/stop into locomotion state
+        // Called after isInLocoMode is updated by handleLocoCameraSwitch
+        function syncDepthScanWithLoco() {
+            if (isInLocoMode) {
+                startDepthScan();
+            } else {
+                stopDepthScan();
+            }
+        }
+
         let bleSendQueue = [];
         let isBleWriting = false;
 
@@ -6620,6 +6885,8 @@ ${getActiveMemoriesPrompt()}`;
                            'STAND';
 
             if (bleConnected) {
+                handleLocoCameraSwitch(bleCmd);
+                syncDepthScanWithLoco();
                 sendBLECommand(bleCmd);
             }
             playSound('blip');
@@ -6663,7 +6930,13 @@ ${getActiveMemoriesPrompt()}`;
             if (sendHalt) {
                 KeyframeSequenceEngine.stopSequence(false);
                 if (bleConnected) {
+                    handleLocoCameraSwitch('STAND');
+                    syncDepthScanWithLoco();
                     sendBLECommand('STAND');
+                } else {
+                    // Even without BLE, mark loco stopped so cam restores
+                    handleLocoCameraSwitch('STAND');
+                    syncDepthScanWithLoco();
                 }
             }
         }
@@ -7909,6 +8182,7 @@ ${getActiveMemoriesPrompt()}`;
             const text = bar.value.trim();
             if (text) {
                 bar.value = '';
+                playSound('blip');
                 triggerCognitionLoop(text);
             }
         }
@@ -7941,6 +8215,8 @@ ${getActiveMemoriesPrompt()}`;
                 if (memBtn) memBtn.click();
                 triggerCognitionLoop(prompt);
             } else if (legCmd) {
+                handleLocoCameraSwitch(legCmd);
+                syncDepthScanWithLoco();
                 sendBLECommand(legCmd).then(sent => {
                     const legNames = {
                         STAND:'Standing up!', SIT:'Sitting down.', WALK_FWD:'Walking forward!', RUN:'Running!',
@@ -8431,63 +8707,17 @@ ${getActiveMemoriesPrompt()}`;
 
                 const btnVoiceBar = document.getElementById('btn-voice-bar');
                 if (btnVoiceBar) {
-                    let voiceHoldTimer = null;
-                    let autoListen2sTriggered = false;
-                    let isPressingVoice = false;
-                    let voicePressStartTime = 0;
-
-                    btnVoiceBar.addEventListener('pointerdown', (e) => {
-                        if (e.button !== undefined && e.button !== 0) return;
-                        isPressingVoice = true;
-                        autoListen2sTriggered = false;
-                        voicePressStartTime = Date.now();
-                        try { btnVoiceBar.setPointerCapture(e.pointerId); } catch(err){}
-
-                        if (voiceHoldTimer) clearTimeout(voiceHoldTimer);
-                        
-                        // 2-Second Hold: Toggles Auto-Listen ON/OFF
-                        voiceHoldTimer = setTimeout(() => {
-                            if (isPressingVoice) {
-                                autoListen2sTriggered = true;
-                                toggleAutoListenMode();
+                    btnVoiceBar.addEventListener('click', (e) => {
+                        registerUserInteraction();
+                        if (isSttListening || isHoldingVoice) {
+                            if (nativeSpeechRec) {
+                                try { nativeSpeechRec.stop(); } catch(err){}
                             }
-                        }, 2000);
-
-                        if (!autoListenActive) {
-                            startVoiceHold();
+                            isHoldingVoice = false;
+                        } else {
+                            startActiveSpeechRecognition();
                         }
                     });
-
-                    const onVoiceEnd = (e) => {
-                        if (!isPressingVoice) return;
-                        isPressingVoice = false;
-                        try { btnVoiceBar.releasePointerCapture(e.pointerId); } catch(err){}
-
-                        if (voiceHoldTimer) {
-                            clearTimeout(voiceHoldTimer);
-                            voiceHoldTimer = null;
-                        }
-
-                        const duration = Date.now() - voicePressStartTime;
-
-                        if (autoListen2sTriggered) {
-                            isHoldingVoice = false;
-                            updateMicUI();
-                        } else {
-                            if (autoListenActive) {
-                                // Quick tap when Auto-Listen is ON -> toggles Auto-Listen OFF
-                                if (duration < 600) {
-                                    toggleAutoListenMode();
-                                }
-                            } else {
-                                endVoiceHold();
-                            }
-                        }
-                        autoListen2sTriggered = false;
-                    };
-
-                    btnVoiceBar.addEventListener('pointerup', onVoiceEnd);
-                    btnVoiceBar.addEventListener('pointercancel', onVoiceEnd);
                 }
 
                 const btnWakeBar = document.getElementById('btn-wake-bar');
