@@ -1,11 +1,11 @@
 <!-- 
-  BES Living Robot Core | Version: 4.1.2
+  BES Living Robot Core | Version: 4.1.3
   Change Log:
+  [Sep 01, 2026 11:02 AM] Fix: Silenced wake word engage/disengage sounds; audio now plays strictly on wake word trigger recognition and prompt message dispatch.
   [Sep 01, 2026 10:50 AM] Fix: Replaced input field with non-credential textarea and disabled autocomplete to prevent browser account login popup.
   [Sep 01, 2026 10:45 AM] Fix: Decoupled getUserMedia from SpeechRecognition (removed mic hardware lock), imported MIGO STT sanitizer and dual-timer silence engine.
   [Aug 27, 2026 02:00 PM] Feature: Auto camera switching + monocular depth obstacle avoidance — back camera activates automatically during locomotion; MiDaS-lite depth engine halts movement when obstacles detected too close. (BESv2)
   [Aug 27, 2026 07:37 AM] Feature: 1-shot face registration at first-boot introduction — BES counts down, captures face embedding, and greets user by name on sight.
-  [Aug 27, 2026 07:30 AM] Fix+Feature: Mic spectrum visualizer, STT mobile fix, selfie-cam gaze inversion fix, TARS/ape D-Pad gaits, awakening overlap guard + self-intro step, expanded touch dialogue, back buttons on control pages.
 -->
 
 <!DOCTYPE html>
@@ -5859,7 +5859,6 @@ ${getActiveMemoriesPrompt()}`;
             if (checkWake) checkWake.checked = wakeScannerActive;
 
             if (wakeScannerActive) {
-                playSound('chirp');
                 log('🎙️ Wake word detection ENABLED ("Hey Bes" / "Bes").', 'SYS');
                 
                 const btn = document.getElementById('btn-wake-bar');
@@ -5871,7 +5870,6 @@ ${getActiveMemoriesPrompt()}`;
 
                 try { startWakeWordScanner(); } catch(e){}
             } else {
-                playSound('blip');
                 log('🔇 Wake word detection DISABLED.', 'SYS');
                 if (wakeRecognition) {
                     try { wakeRecognition.abort(); } catch(e){}
@@ -6052,6 +6050,7 @@ ${getActiveMemoriesPrompt()}`;
             if (!cleanText) return;
 
             log(`🗣️ [Heard Speech]: "${cleanText}"`, 'AI');
+            playSound('blip');
             const inputBar = document.getElementById('input-prompt-bar');
             if (inputBar) inputBar.value = '';
 
@@ -8161,6 +8160,7 @@ ${getActiveMemoriesPrompt()}`;
             const text = bar.value.trim();
             if (text) {
                 bar.value = '';
+                playSound('blip');
                 triggerCognitionLoop(text);
             }
         }
