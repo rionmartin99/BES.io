@@ -667,71 +667,73 @@
     </section>
 
     <!-- Footer Controls & Manual Prompt Bar -->
-    <footer class="flex-shrink-0 px-2.5 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] bg-slate-900 border-t border-slate-800 flex flex-col gap-1.5 z-30 shadow-xl">
+    <footer class="flex-shrink-0 px-2.5 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] bg-slate-900 border-t border-slate-800 flex flex-col gap-2 z-30 shadow-xl">
         
+        <!-- Quick Interaction Chips (horizontally scrollable, no wrapping) -->
+        <div class="flex items-center gap-2 overflow-x-auto pb-0.5 scrollbar-none text-xs font-semibold flex-nowrap">
+            <!-- Standard Leg Gaits -->
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="STAND">🦵 Stand</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="WALK_FWD">🚶 Walk</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="RUN">🏃 Run</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="WAVE">👋 Wave</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="REST">😴 Rest</button>
+            <div class="h-4 w-px bg-slate-700 mx-0.5 flex-shrink-0"></div>
+            
+            <!-- Keyframe Choreography Presets -->
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-violet-900/50 hover:bg-violet-800/60 active:scale-95 border border-violet-700/60 text-violet-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-choreo="HAPPY_WIGGLE">✨ Dance</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-violet-900/50 hover:bg-violet-800/60 active:scale-95 border border-violet-700/60 text-violet-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-choreo="POLITE_BOW">🙇 Bow</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-violet-900/50 hover:bg-violet-800/60 active:scale-95 border border-violet-700/60 text-violet-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-choreo="CURIOUS_SCAN">🔍 Scan</button>
+            <div class="h-4 w-px bg-slate-700 mx-0.5 flex-shrink-0"></div>
+            
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-prompt="Look through your camera and tell me what objects you see in the room!">👀 Look Around</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-prompt="Check all your sensor readings and give me a full system health report!">🩺 Self Scan</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-prompt="Sing a happy little robot melody for me!">🎵 Sing Song</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-prompt="What do you remember about me from your Memory Bank?">🧠 My Memories</button>
+            <button class="chip-btn flex-shrink-0 px-4 py-2 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-action="dream">💤 Nap & Dream</button>
+        </div>
+
         <!-- Prompt Input Bar with Camera, Mic, Wake & Sound buttons on the left -->
         <div class="flex items-center gap-1.5 sm:gap-2 w-full">
             <!-- Left-side Controls: Camera, Microphone, Wake, Sound -->
             <div class="flex items-center gap-1 flex-shrink-0">
                 <!-- Camera Flip & Lens Indicator Button -->
-                <button id="btn-flip-cam-bar" class="flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm select-none" title="Toggle Front / Back Camera Lens (Hold 2s to Disable)">
-                    <i id="icon-cam-bar" class="ph-bold ph-camera-rotate text-teal-400 text-sm xs:text-base pointer-events-none"></i>
-                    <span id="label-cam-bar" class="text-[7px] font-extrabold leading-none mt-0.5 text-teal-300 font-mono-code pointer-events-none">FRONT</span>
+                <button id="btn-flip-cam-bar" class="flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm select-none" title="Toggle Front / Back Camera Lens (Hold 2s to Disable)">
+                    <i id="icon-cam-bar" class="ph-bold ph-camera-rotate text-teal-400 text-base xs:text-lg pointer-events-none"></i>
+                    <span id="label-cam-bar" class="text-[9px] font-extrabold leading-none mt-0.5 text-teal-300 font-mono-code pointer-events-none">FRONT</span>
                 </button>
 
 
                 <!-- Microphone Voice Input Button (Hold to Talk / Tap to Toggle Listen) -->
-                <button id="btn-voice-bar" class="flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm select-none relative overflow-hidden" title="Hold to Talk | Tap to Toggle Listen (Hold 2s to Disable)">
+                <button id="btn-voice-bar" class="flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm select-none relative overflow-hidden" title="Hold to Talk | Tap to Toggle Listen (Hold 2s to Disable)">
                     <!-- Mic Spectrum Visualizer Canvas (behind icon) -->
-                    <canvas id="mic-spectrum-canvas" width="38" height="40" class="absolute inset-0 w-full h-full opacity-0 transition-opacity duration-300 pointer-events-none rounded-xl" style="mix-blend-mode: screen;"></canvas>
-                    <i id="icon-voice-bar" class="ph-bold ph-microphone text-teal-400 text-sm xs:text-base pointer-events-none relative z-10"></i>
-                    <span id="label-voice-bar" class="text-[7px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code pointer-events-none relative z-10">MIC</span>
+                    <canvas id="mic-spectrum-canvas" width="48" height="48" class="absolute inset-0 w-full h-full opacity-0 transition-opacity duration-300 pointer-events-none rounded-xl" style="mix-blend-mode: screen;"></canvas>
+                    <i id="icon-voice-bar" class="ph-bold ph-microphone text-teal-400 text-base xs:text-lg pointer-events-none relative z-10"></i>
+                    <span id="label-voice-bar" class="text-[9px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code pointer-events-none relative z-10">MIC</span>
                 </button>
 
 
                 <!-- Wake Word Scanner Button -->
-                <button id="btn-wake-bar" onclick="toggleWakeScanner()" class="flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm" title="Toggle Wake-Word Scanner">
-                    <i id="icon-wake-bar" class="ph-bold ph-microphone-stage text-slate-400 text-sm xs:text-base"></i>
-                    <span id="label-wake-bar" class="text-[7px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code">WAKE</span>
+                <button id="btn-wake-bar" onclick="toggleWakeScanner()" class="flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm" title="Toggle Wake-Word Scanner">
+                    <i id="icon-wake-bar" class="ph-bold ph-microphone-stage text-slate-400 text-base xs:text-lg"></i>
+                    <span id="label-wake-bar" class="text-[9px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code">WAKE</span>
                 </button>
 
                 <!-- Sound Mute/Unmute Button -->
-                <button id="btn-sound-bar" onclick="toggleSoundMute()" class="flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm" title="Toggle Sound / Mute">
-                    <i id="icon-sound-bar" class="ph-bold ph-speaker-high text-teal-400 text-sm xs:text-base"></i>
-                    <span id="label-sound-bar" class="text-[7px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code">SND</span>
+                <button id="btn-sound-bar" onclick="toggleSoundMute()" class="flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm" title="Toggle Sound / Mute">
+                    <i id="icon-sound-bar" class="ph-bold ph-speaker-high text-teal-400 text-base xs:text-lg"></i>
+                    <span id="label-sound-bar" class="text-[9px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code">SND</span>
                 </button>
             </div>
 
             <!-- Prompt Input Input Field -->
             <input type="text" id="input-prompt-bar" name="chat_prompt_input_random" placeholder="Ask BES anything..." autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" spellcheck="true" data-form-type="other"
-                class="flex-1 min-w-0 bg-slate-950 border border-slate-700/80 focus:border-teal-400 rounded-xl px-3 py-2 xs:py-2.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none transition-colors shadow-inner">
+                class="flex-1 min-w-0 bg-slate-950 border border-slate-700/80 focus:border-teal-400 rounded-xl px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none transition-colors shadow-inner h-11 xs:h-12">
 
             <!-- Send Button -->
-            <button id="btn-send-prompt" onclick="submitPrompt()" class="px-3 xs:px-3.5 py-2 xs:py-2.5 bg-teal-500 hover:bg-teal-400 active:scale-95 text-slate-950 text-xs font-black rounded-xl cursor-pointer flex items-center justify-center gap-1.5 transition-all flex-shrink-0 shadow-md shadow-teal-500/20">
+            <button id="btn-send-prompt" onclick="submitPrompt()" class="px-3 xs:px-4 h-11 xs:h-12 bg-teal-500 hover:bg-teal-400 active:scale-95 text-slate-950 text-sm font-black rounded-xl cursor-pointer flex items-center justify-center gap-1.5 transition-all flex-shrink-0 shadow-md shadow-teal-500/20">
                 <span>Send</span>
-                <i class="ph-bold ph-paper-plane-tilt text-sm"></i>
+                <i class="ph-bold ph-paper-plane-tilt text-base"></i>
             </button>
-        </div>
-
-        <!-- Quick Interaction Chips (horizontally scrollable, no wrapping) -->
-        <div class="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-[10px] font-semibold flex-nowrap">
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-prompt="Look through your camera and tell me what objects you see in the room!">👀 Look Around</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-prompt="Check all your sensor readings and give me a full system health report!">🩺 Self Scan</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-prompt="Sing a happy little robot melody for me!">🎵 Sing Song</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-prompt="What do you remember about me from your Memory Bank?">🧠 My Memories</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-action="dream">🌙 Nap &amp; Dream</button>
-            <div class="h-4 w-px bg-slate-700 mx-0.5 flex-shrink-0"></div>
-            <!-- Keyframe Choreography Presets -->
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-violet-900/50 hover:bg-violet-800/60 active:scale-95 border border-violet-700/60 text-violet-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-choreo="HAPPY_WIGGLE">✨ Dance</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-violet-900/50 hover:bg-violet-800/60 active:scale-95 border border-violet-700/60 text-violet-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-choreo="POLITE_BOW">🙇 Bow</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-violet-900/50 hover:bg-violet-800/60 active:scale-95 border border-violet-700/60 text-violet-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-choreo="CURIOUS_SCAN">🔍 Scan</button>
-            <div class="h-4 w-px bg-slate-700 mx-0.5 flex-shrink-0"></div>
-            <!-- Standard Leg Gaits -->
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="STAND">🦵 Stand</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="WALK_FWD">🚶 Walk</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="RUN">🏃 Run</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="WAVE">👋 Wave</button>
-            <button class="chip-btn flex-shrink-0 px-2.5 py-1 bg-blue-900/50 hover:bg-blue-800/60 active:scale-95 border border-blue-700/60 text-blue-200 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer" onclick="handleChipClick(this)" data-leg="REST">😴 Rest</button>
         </div>
 
     </footer>
@@ -2916,7 +2918,7 @@
         let isFreefalling = false;
 
         function triggerDizzinessReflex() {
-            if (isDizzy || isSleeping) return;
+            if (isDizzy || isSleeping || isInLocoMode) return;
             isDizzy = true;
             log('🌀 [Proprioception] Rapid shaking detected! Dizzy gyro overload triggered.', 'REFLEX');
             
@@ -4720,10 +4722,10 @@
 
                 const { cleanText } = extractAndCleanEmotion(text);
                 let cleaned = cleanText
-                    .replace(/\s*m\/s²/gi, "")
+                    .replace(/\s*m\/s.*?/gi, "")
                     .replace(/\s*deg\/s\b/gi, "")
                     .replace(/\/255\b/g, "")
-                    .replace(/\*[^*]+\*/g, "")
+                    .replace(/\*[^\*]+\*/g, "")
                     .replace(/\[SAVE_MEMORY:[^\]]*?\]/gi, "")
                     .replace(/[`#|<>\[\]{}\\]/g, "")
                     // Pronounce B.E.S. or BES naturally as the single word "Bes"
@@ -4735,6 +4737,11 @@
                 if (!cleaned) return;
 
                 const utterance = new SpeechSynthesisUtterance(cleaned);
+                
+                // Prevent Chrome SpeechSynthesis garbage collection bug
+                window.activeUtterances = window.activeUtterances || [];
+                window.activeUtterances.push(utterance);
+
                 const prosody = calculateDynamicVocalProsody();
                 utterance.pitch = prosody.pitch;
                 utterance.rate = prosody.rate;
@@ -4756,10 +4763,14 @@
                     }, maxSpeechMs);
                 };
                 utterance.onend = () => {
+                    const index = window.activeUtterances.indexOf(utterance);
+                    if (index > -1) window.activeUtterances.splice(index, 1);
                     if (speechWatchdogTimer) clearTimeout(speechWatchdogTimer);
                     handleSpeechFinished();
                 };
                 utterance.onerror = () => {
+                    const index = window.activeUtterances.indexOf(utterance);
+                    if (index > -1) window.activeUtterances.splice(index, 1);
                     if (speechWatchdogTimer) clearTimeout(speechWatchdogTimer);
                     handleSpeechFinished();
                 };
@@ -5457,10 +5468,10 @@ ${getActiveMemoriesPrompt()}`;
                 }
 
                 // 2. High-speed spin or violent agitation triggering dizziness
-                if ((spinVal > 280 || mag > 22) && !isDizzy) {
+                if ((spinVal > 280 || mag > 22) && !isDizzy && !isInLocoMode) {
                     sensorData.motionState = "DIZZY GYRO";
                     triggerDizzinessReflex();
-                } else if (mag > 16) {
+                } else if (mag > 16 && !isInLocoMode) {
                     sensorData.motionState = "SHOCK JOLT";
                     if (now - sensorData.lastShockT > 1200) {
                         sensorData.lastShockT = now;
@@ -5759,6 +5770,41 @@ ${getActiveMemoriesPrompt()}`;
             updateMicUI();
         }
 
+        let sttSilenceTimer = null;
+
+        function resetSttSilenceTimer() {
+            if (sttSilenceTimer) clearTimeout(sttSilenceTimer);
+            sttSilenceTimer = setTimeout(() => {
+                if (nativeSpeechRec) {
+                    try { nativeSpeechRec.stop(); } catch(e){}
+                }
+            }, 2500); // Wait 2.5s of silence before auto-submitting
+        }
+
+        function emergencyStop() {
+            log('🚨 [Emergency Stop] Triggered!', 'SYS');
+            stopAllSpeechEngines();
+            if (window.speechSynthesis) window.speechSynthesis.cancel();
+            if (speechWatchdogTimer) clearTimeout(speechWatchdogTimer);
+            if (window.activeUtterances) window.activeUtterances = [];
+            isTalking = false;
+            
+            setLegAnimation('STAND');
+            setEmotion('NORMAL');
+            playSound('blip');
+            
+            if (sttSilenceTimer) clearTimeout(sttSilenceTimer);
+            accumulatedHoldTranscript = "";
+            const inputBar = document.getElementById('input-prompt-bar');
+            if (inputBar) inputBar.value = "";
+            showSpeechBubble("Stopped.", true);
+            
+            setTimeout(() => {
+                updateMicUI();
+                if (wakeScannerActive) startWakeWordScanner();
+            }, 500);
+        }
+
         function startWakeWordScanner() {
             if (isMicDisabled || !wakeScannerActive || !isBooted || isSleeping || isTalking || isHoldingVoice || listenModeActive) return;
             const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -5779,9 +5825,17 @@ ${getActiveMemoriesPrompt()}`;
                     registerUserInteraction();
                     for (let i = e.resultIndex; i < e.results.length; i++) {
                         const transcript = e.results[i][0].transcript.trim().toLowerCase();
+                        
+                        if (transcript === 'stop' || transcript.startsWith('stop ') || transcript.endsWith(' stop') || transcript.includes(' stop ')) {
+                            try { wakeRecognition.abort(); } catch(err){}
+                            wakeRecognition = null;
+                            emergencyStop();
+                            break;
+                        }
+
                         const triggered = WAKE_WORD_LIST.some(w => transcript.includes(w));
                         if (triggered) {
-                            log(`🎙️ [Wake Word] Triggered by phrase: "${transcript}"!`, 'AI');
+                            log(`🎤 [Wake Word] Triggered by phrase: "${transcript}"!`, 'AI');
                             playSound('fanfare');
                             setEmotion('EXCITED');
                             showSpeechBubble("Yes? I'm listening...", true);
@@ -5791,7 +5845,7 @@ ${getActiveMemoriesPrompt()}`;
 
                             let trailingText = transcript;
                             WAKE_WORD_LIST.forEach(w => {
-                                trailingText = trailingText.replace(new RegExp(`^.*?${w}[,\\s]*`, 'i'), '');
+                                trailingText = trailingText.replace(new RegExp(`^.*?${w}[,\s]*`, 'i'), '');
                             });
 
                             setTimeout(() => {
@@ -5833,18 +5887,30 @@ ${getActiveMemoriesPrompt()}`;
             if (wakeScannerActive) {
                 playSound('chirp');
                 log('🎙️ Wake word detection ENABLED ("Hey Bes" / "Bes").', 'SYS');
-                showSpeechBubble('Wake word ON! Say "Hey Bes", "Wake up Bes", or "Hello Bes" anytime! 🎤');
-                startWakeWordScanner();
+                
+                const btn = document.getElementById('btn-wake-bar');
+                if (btn) btn.className = "flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-teal-500 hover:bg-teal-400 active:scale-95 border border-teal-600 rounded-xl text-slate-900 cursor-pointer transition-all flex-shrink-0 shadow-md shadow-teal-500/20";
+                const icon = document.getElementById('icon-wake-bar');
+                if (icon) icon.className = "ph-bold ph-microphone-stage text-slate-900 text-base xs:text-lg";
+                const label = document.getElementById('label-wake-bar');
+                if (label) label.className = "text-[9px] font-black leading-none mt-0.5 text-slate-900 font-mono-code";
+
+                try { startWakeWordScanner(); } catch(e){}
             } else {
                 playSound('blip');
-                log('🎙️ Wake word detection disabled.', 'SYS');
-                showSpeechBubble('Wake word scanner turned OFF.');
+                log('🔇 Wake word detection DISABLED.', 'SYS');
                 if (wakeRecognition) {
                     try { wakeRecognition.abort(); } catch(e){}
                     wakeRecognition = null;
                 }
+                
+                const btn = document.getElementById('btn-wake-bar');
+                if (btn) btn.className = "flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm";
+                const icon = document.getElementById('icon-wake-bar');
+                if (icon) icon.className = "ph-bold ph-microphone-stage text-slate-400 text-base xs:text-lg";
+                const label = document.getElementById('label-wake-bar');
+                if (label) label.className = "text-[9px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code";
             }
-            updateWakeUI();
         }
 
         function startActiveSpeechRecognition() {
@@ -5860,22 +5926,39 @@ ${getActiveMemoriesPrompt()}`;
 
             try {
                 nativeSpeechRec = new SpeechRec();
-                nativeSpeechRec.continuous = false;
+                nativeSpeechRec.continuous = true;
                 nativeSpeechRec.interimResults = true;
                 nativeSpeechRec.lang = navigator.language || 'en-US';
 
+                nativeSpeechRec.onspeechstart = () => {
+                    resetSttSilenceTimer();
+                };
+
                 nativeSpeechRec.onresult = (e) => {
                     registerUserInteraction();
-                    let full = "";
+                    let finalTranscript = "";
+                    let interimTranscript = "";
                     for (let i = 0; i < e.results.length; i++) {
-                        full += e.results[i][0].transcript;
+                        if (e.results[i].isFinal) {
+                            finalTranscript += (finalTranscript ? " " : "") + e.results[i][0].transcript.trim();
+                        } else {
+                            interimTranscript += (interimTranscript ? " " : "") + e.results[i][0].transcript.trim();
+                        }
                     }
-                    full = full.trim();
+                    const full = (finalTranscript + " " + interimTranscript).trim();
+                    
+                    if (full.toLowerCase() === 'stop' || full.toLowerCase().endsWith(' stop') || full.toLowerCase().startsWith('stop ')) {
+                        try { nativeSpeechRec.abort(); } catch(err){}
+                        emergencyStop();
+                        return;
+                    }
+
                     if (full) {
                         accumulatedHoldTranscript = full;
                         showSpeechBubble(`"${accumulatedHoldTranscript}"`, true);
                         const inputBar = document.getElementById('input-prompt-bar');
                         if (inputBar) inputBar.value = accumulatedHoldTranscript;
+                        resetSttSilenceTimer();
                     }
                 };
 
@@ -5886,6 +5969,7 @@ ${getActiveMemoriesPrompt()}`;
                 };
 
                 nativeSpeechRec.onend = () => {
+                    if (sttSilenceTimer) clearTimeout(sttSilenceTimer);
                     isSttListening = false;
                     const text = accumulatedHoldTranscript.trim();
                     accumulatedHoldTranscript = "";
@@ -6143,53 +6227,26 @@ ${getActiveMemoriesPrompt()}`;
         }
 
         function updateMicUI() {
-            const vLabel = document.getElementById('voice-btn-label');
-            const vBtn = document.getElementById('btn-voice');
-            const barBtn = document.getElementById('btn-voice-bar');
-            const barIcon = document.getElementById('icon-voice-bar');
-            const barLabel = document.getElementById('label-voice-bar');
+            const btn = document.getElementById('btn-voice-bar');
+            const icon = document.getElementById('icon-voice-bar');
+            const label = document.getElementById('label-voice-bar');
+            if (!btn || !icon || !label) return;
 
-            if (isHoldingVoice) {
-                if (vLabel) vLabel.innerText = "HEARING...";
-                if (vBtn) vBtn.className = "px-3 py-1.5 bg-rose-500 text-white font-bold rounded-xl flex items-center space-x-1 animate-pulse shadow-md shadow-rose-500/40 cursor-pointer";
-                if (barBtn) {
-                    barBtn.className = "flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-rose-500 hover:bg-rose-400 active:scale-95 border border-rose-400 rounded-xl text-white cursor-pointer transition-all flex-shrink-0 shadow-md shadow-rose-500/40 animate-pulse relative overflow-hidden";
-                }
-                if (barIcon) barIcon.className = "ph-bold ph-waveform text-white text-sm xs:text-base pointer-events-none relative z-10";
-                if (barLabel) {
-                    barLabel.innerText = "HEARING";
-                    barLabel.className = "text-[7px] font-extrabold leading-none mt-0.5 text-white font-mono-code pointer-events-none relative z-10";
-                }
-            } else if (autoListenActive || listenModeActive) {
-                if (vLabel) vLabel.innerText = "AUTO ON";
-                if (vBtn) vBtn.className = "px-3 py-1.5 bg-emerald-600 text-white font-bold rounded-xl flex items-center space-x-1 shadow-md shadow-emerald-500/30 cursor-pointer";
-                if (barBtn) {
-                    barBtn.className = "flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 border border-emerald-400 rounded-xl text-white cursor-pointer transition-all flex-shrink-0 shadow-md shadow-emerald-500/30 relative overflow-hidden";
-                }
-                if (barIcon) barIcon.className = "ph-bold ph-microphone text-white text-sm xs:text-base pointer-events-none relative z-10";
-                if (barLabel) {
-                    barLabel.innerText = "AUTO ON";
-                    barLabel.className = "text-[7px] font-black leading-none mt-0.5 text-emerald-200 font-mono-code pointer-events-none relative z-10";
-                }
+            if (isHoldingVoice || isSttListening) {
+                btn.className = "flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-teal-500 hover:bg-teal-400 active:scale-95 border border-teal-600 rounded-xl text-slate-900 cursor-pointer transition-all flex-shrink-0 shadow-md shadow-teal-500/20 select-none relative overflow-hidden";
+                icon.className = "ph-fill ph-microphone text-slate-900 text-base xs:text-lg pointer-events-none relative z-10 animate-pulse";
+                label.className = "text-[9px] font-black leading-none mt-0.5 text-slate-900 font-mono-code pointer-events-none relative z-10";
+            } else if (listenModeActive) {
+                btn.className = "flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-indigo-500 hover:bg-indigo-400 active:scale-95 border border-indigo-600 rounded-xl text-slate-900 cursor-pointer transition-all flex-shrink-0 shadow-md shadow-indigo-500/20 select-none relative overflow-hidden";
+                icon.className = "ph-fill ph-microphone-stage text-slate-900 text-base xs:text-lg pointer-events-none relative z-10";
+                label.className = "text-[9px] font-black leading-none mt-0.5 text-slate-900 font-mono-code pointer-events-none relative z-10";
             } else {
-                if (vLabel) vLabel.innerText = "VOICE";
-                if (vBtn) vBtn.className = "px-3 py-1.5 bg-teal-500 hover:bg-teal-400 active:scale-95 text-slate-950 font-bold rounded-xl flex items-center space-x-1 transition-all shadow-md shadow-teal-500/30 cursor-pointer";
-                if (barBtn) {
-                    barBtn.className = "flex flex-col items-center justify-center min-w-[38px] xs:min-w-[42px] h-9 xs:h-10 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm relative overflow-hidden";
-                    barBtn.title = "Hold to Talk | Hold 2s to Toggle Auto-Listen";
-                }
-                if (barIcon) barIcon.className = "ph-bold ph-microphone text-teal-400 text-sm xs:text-base pointer-events-none relative z-10";
-                if (barLabel) {
-                    barLabel.innerText = "MIC";
-                    barLabel.className = "text-[7px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code pointer-events-none";
-                }
+                btn.className = "flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm select-none relative overflow-hidden";
+                icon.className = "ph-bold ph-microphone text-teal-400 text-base xs:text-lg pointer-events-none relative z-10";
+                label.className = "text-[9px] font-bold leading-none mt-0.5 text-slate-400 font-mono-code pointer-events-none relative z-10";
             }
         }
 
-
-        // =========================================================================
-        // 15. LOGGING & INITIALIZATION
-        // =========================================================================
         function log(msg, type = 'SYS') {
             const term = document.getElementById('terminal-log');
             if (!term) return;
