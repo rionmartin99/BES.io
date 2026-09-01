@@ -1,11 +1,11 @@
 <!-- 
-  BES Living Robot Core | Version: 4.2.7
+  BES Living Robot Core | Version: 4.2.9
   Change Log:
+  [Sep 01, 2026 06:50 PM] Feature: Added Height Reaction toggle switch and zero-datum Ground Calibration tool in Settings modal with real-time altimetry telemetry status.
+  [Sep 01, 2026 06:45 PM] Fix: Fixed Autonomous Mode execution loop (resolved sensorData.isLifted reference and enabled immediate cycle trigger), and calibrated lift sensitivity with IMU noise deadzone & realistic height thresholds.
   [Sep 01, 2026 04:40 PM] Fix: Fixed Autonomous Mode chip toggle button click/tap handler by routing through handleChipClick and protecting from generic chip-btn listener overwrite.
   [Sep 01, 2026 04:35 PM] Fix: Configured mic sound wave spectrum canvas to hide completely when idle and react dynamically only when mic is toggled and user is speaking.
   [Sep 01, 2026 04:20 PM] Feature: Added Autonomous Sentient Mode with multi-modal perception commentary, fallback heuristic reasoner, and memory question query exclusion.
-  [Sep 01, 2026 04:10 PM] Fix: Rebuilt Mic button & speech recognition architecture aligned with MIGO engine (speech cancellation, continuous stream, dual-timer silence auto-dispatch, and robust toggle).
-  [Sep 01, 2026 04:05 PM] Feature: Added 5 dynamic embodied reactions (quotes, emotions, audio SFX, haptics) for sudden lift, gradual lift, and ground landing touchdown to ensure varied expression.
 -->
 
 <!DOCTYPE html>
@@ -2033,8 +2033,49 @@
                 </div>
             </div>
 
-            <!-- TAB 5: ESP32 BLE Legs -->
+            <!-- TAB 5: ESP32 BLE Legs & Proprioception -->
             <div id="tab-legs" class="settings-tab-pane space-y-3.5 overflow-y-auto flex-1 pr-1 hidden">
+                <!-- Proprioceptive Height Reaction & Ground Calibration Card -->
+                <div class="p-3 bg-slate-950/80 border border-teal-500/30 rounded-xl space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-black text-teal-300 flex items-center gap-1.5">
+                            <i class="ph-bold ph-arrows-vertical text-teal-400"></i>
+                            <span>Altimetry & Lift Reaction</span>
+                        </span>
+                        <span id="settings-height-badge"
+                            class="text-[9px] font-mono-code px-2 py-0.5 rounded-full bg-slate-800 text-teal-300 font-bold border border-teal-500/20">
+                            0.0 cm (Grounded)
+                        </span>
+                    </div>
+
+                    <!-- Toggle Height Reaction -->
+                    <div class="flex items-center justify-between p-2.5 bg-slate-900/70 border border-slate-800 rounded-xl">
+                        <div class="space-y-0.5">
+                            <div class="text-xs font-bold text-slate-200">Height / Lift Perception Reaction</div>
+                            <div class="text-[10px] text-slate-400">React dynamically when lifted or suspended in mid-air</div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="check-enable-height-reaction" class="sr-only peer" checked
+                                onchange="toggleHeightReactionSetting(this.checked)">
+                            <div
+                                class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-teal-500">
+                            </div>
+                        </label>
+                    </div>
+
+                    <!-- Calibrate Ground Height Reference Button -->
+                    <div class="space-y-1.5">
+                        <button id="btn-settings-calibrate-ground" onclick="manualCalibrateGroundFromSettings()"
+                            class="w-full py-2.5 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-slate-950 font-black text-xs rounded-xl shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+                            <i class="ph-bold ph-crosshair text-sm"></i>
+                            <span>Calibrate Ground Level (Set 0.0 cm Datum)</span>
+                        </button>
+                        <p class="text-[9px] text-slate-400 leading-normal">
+                            Place BES flat on the ground or desk and tap Calibrate to set the baseline height datum to exactly 0.0 cm.
+                        </p>
+                    </div>
+                </div>
+
                 <div class="p-3 bg-slate-950/80 border border-blue-500/30 rounded-xl space-y-3">
                     <div class="flex items-center justify-between">
                         <span class="text-xs font-black text-blue-300 flex items-center gap-1.5">
@@ -3435,6 +3476,52 @@
         let liftReactionCooldownT = 0;
         let landReactionCooldownT = 0;
 
+        let heightReactionEnabled = getStorage('bes_height_reaction', 'true') !== 'false';
+
+        function toggleHeightReactionSetting(enabled) {
+            heightReactionEnabled = !!enabled;
+            setStorage('bes_height_reaction', heightReactionEnabled ? 'true' : 'false');
+            if (!heightReactionEnabled) {
+                sensorData.isLifted = false;
+                sensorData.height = 0;
+                sensorData.heightCm = 0;
+                sensorData.verticalVel = 0;
+                calibrateGroundHeightReference(false);
+            }
+            log(`📏 [Altimetry] Height reaction reflex ${heightReactionEnabled ? 'ENABLED' : 'DISABLED'}.`, 'SYS');
+            updateSettingsHeightBadge();
+        }
+        window.toggleHeightReactionSetting = toggleHeightReactionSetting;
+
+        function manualCalibrateGroundFromSettings() {
+            registerUserInteraction();
+            unlockAudioSession();
+            calibrateGroundHeightReference(true);
+            updateSettingsHeightBadge();
+            playSound('fanfare');
+            const msg = "Ground datum calibrated to 0.0 cm! Zero level established. 🎯";
+            showSpeechBubble(msg);
+            speakSafe("Ground level calibrated to 0.0 cm! Solid footing established.");
+            log("🎯 [Altimetry Calibration] Zero datum manually calibrated to 0.0 cm from Settings.", "AI");
+        }
+        window.manualCalibrateGroundFromSettings = manualCalibrateGroundFromSettings;
+
+        function updateSettingsHeightBadge() {
+            const badge = document.getElementById('settings-height-badge');
+            if (!badge) return;
+            if (!heightReactionEnabled) {
+                badge.className = "text-[9px] font-mono-code px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-bold border border-slate-700";
+                badge.innerText = "DISABLED";
+            } else if (sensorData.isLifted) {
+                badge.className = "text-[9px] font-mono-code px-2 py-0.5 rounded-full bg-rose-950/80 text-rose-300 font-bold border border-rose-500/40 animate-pulse";
+                badge.innerText = `LIFTED (+${sensorData.heightCm.toFixed(1)}cm)`;
+            } else {
+                badge.className = "text-[9px] font-mono-code px-2 py-0.5 rounded-full bg-slate-800 text-teal-300 font-bold border border-teal-500/20";
+                badge.innerText = `${sensorData.heightCm.toFixed(1)} cm (Grounded)`;
+            }
+        }
+        window.updateSettingsHeightBadge = updateSettingsHeightBadge;
+
         /**
          * Calibrates ground height reference prior to movement or upon landing
          */
@@ -3459,16 +3546,17 @@
             if (logCalibration) {
                 log('📏 [Altimetry] Baseline ground level established at 0.0 cm.', 'SYS');
             }
+            updateSettingsHeightBadge();
         }
         window.calibrateGroundHeightReference = calibrateGroundHeightReference;
 
         /**
          * Pre-movement check: verifies current height and ground contact before allowing movement actions
          * Returns true if grounded and ready, false if airborne/lifted
-         * Includes obstacle/incline tolerance (up to 11.0 cm) so small obstacles don't falsely block walking
+         * Includes obstacle/incline tolerance (up to 20.0 cm) so small obstacles don't falsely block walking
          */
         function checkHeightBeforeMovement(actionName = "Movement") {
-            if (sensorData.isLifted || sensorData.heightCm > 11.0) {
+            if (heightReactionEnabled && (sensorData.isLifted || sensorData.heightCm > 20.0)) {
                 const currentH = sensorData.heightCm > 0 ? sensorData.heightCm.toFixed(1) : "airborne";
                 log(`🚫 [Altimetry] ${actionName} BLOCKED: Robot is suspended in air (+${currentH}cm)! Place on ground first.`, 'WARN');
                 
@@ -3622,7 +3710,7 @@
          * Immediately stops all locomotion and triggers embodied proprioception reaction
          */
         function handleLiftDetected(isSudden = false, heightDeltaCm = 0, vertAccel = 0) {
-            if (sensorData.isLifted || isSleeping || !isBooted) return;
+            if (!heightReactionEnabled || sensorData.isLifted || isSleeping || !isBooted) return;
             const now = Date.now();
             if (now - liftReactionCooldownT < 2000) return;
             liftReactionCooldownT = now;
@@ -3677,6 +3765,7 @@
 
             showSpeechBubble(rx.quote);
             speakSafe(rx.quote);
+            updateSettingsHeightBadge();
         }
         window.handleLiftDetected = handleLiftDetected;
 
@@ -3686,6 +3775,11 @@
          */
         function handleGroundReturn() {
             if (!sensorData.isLifted || isSleeping || !isBooted) return;
+            if (!heightReactionEnabled) {
+                sensorData.isLifted = false;
+                calibrateGroundHeightReference(false);
+                return;
+            }
             const now = Date.now();
             if (now - landReactionCooldownT < 2000) return;
             landReactionCooldownT = now;
@@ -6414,16 +6508,16 @@ ${getActiveMemoriesPrompt()}`;
                 // 4. Leaky Velocity & Relative Vertical Height Integration with Obstacle Damping
                 if (isObstacleImpact) {
                     // Instantly dampen vertical velocity and clamp phantom height drift caused by obstacle bump
-                    sensorData.verticalVel *= 0.15;
+                    sensorData.verticalVel *= 0.10;
                     if (!sensorData.isLifted) {
-                        sensorData.height = Math.max(0, sensorData.height * 0.25);
+                        sensorData.height = Math.max(0, sensorData.height * 0.15);
                         sensorData.heightCm = Math.round(sensorData.height * 100 * 10) / 10;
                     }
                     upwardMotionStartTime = 0;
                     sustainedUpwardDurationMs = 0;
                     heightElevationStartTime = 0;
                     sustainedHeightDurationMs = 0;
-                } else if (mag < 0.25 && Math.abs(vertAccel) < 0.22) {
+                } else if (mag < 0.40 && Math.abs(vertAccel) < 0.45) {
                     // Stationary on flat surface / ground (ZUPT Zero-Velocity Update)
                     sensorData.verticalVel = 0;
                     if (!sensorData.isLifted) {
@@ -6435,48 +6529,50 @@ ${getActiveMemoriesPrompt()}`;
                     heightElevationStartTime = 0;
                     sustainedHeightDurationMs = 0;
                 } else {
-                    // Integrate vertical velocity with decay to mitigate inertial drift
-                    sensorData.verticalVel = (sensorData.verticalVel + vertAccel * dt) * 0.980;
-                    // Integrate relative displacement
+                    // Apply deadband to resting IMU noise so resting vibration never accumulates into phantom lift
+                    const effectiveVertAccel = Math.abs(vertAccel) > 0.50 ? (vertAccel - Math.sign(vertAccel) * 0.50) : 0;
+                    sensorData.verticalVel = (sensorData.verticalVel + effectiveVertAccel * dt) * 0.930;
+                    
+                    // Integrate relative displacement only with meaningful vertical velocity
                     const dH = sensorData.verticalVel * dt;
                     sensorData.height = Math.max(0, (sensorData.height || 0) + dH);
                     sensorData.heightCm = Math.round(sensorData.height * 100 * 10) / 10;
                 }
 
                 // 5. TEMPORAL PERSISTENCE ACCUMULATION FOR TRUE LIFT VS TERRAIN BUMP
-                const upwardAccelThresh = isActivelyMoving ? 2.8 : 2.0;
+                const upwardAccelThresh = isActivelyMoving ? 3.6 : 2.6;
                 if (vertAccel > upwardAccelThresh) {
                     if (upwardMotionStartTime === 0) upwardMotionStartTime = now;
                     sustainedUpwardDurationMs = now - upwardMotionStartTime;
-                } else if (vertAccel < 0.3) {
+                } else if (vertAccel < 0.5) {
                     upwardMotionStartTime = 0;
                     sustainedUpwardDurationMs = 0;
                 }
 
-                const heightThresh = isActivelyMoving ? 12.0 : 8.5;
-                if (sensorData.heightCm > heightThresh && sensorData.verticalVel > 0.08) {
+                const heightThresh = isActivelyMoving ? 20.0 : 15.0;
+                if (sensorData.heightCm > heightThresh && sensorData.verticalVel > 0.12) {
                     if (heightElevationStartTime === 0) heightElevationStartTime = now;
                     sustainedHeightDurationMs = now - heightElevationStartTime;
-                } else if (sensorData.heightCm < 5.0 || (now - lastObstacleJoltTime < 300)) {
+                } else if (sensorData.heightCm < 8.0 || (now - lastObstacleJoltTime < 300)) {
                     heightElevationStartTime = 0;
                     sustainedHeightDurationMs = 0;
                 }
 
                 // 6. PROPRIOCEPTIVE VERTICAL LIFT DETECTION (WITH OBSTACLE TOLERANCE) & TOUCHDOWN RECOVERY
-                const isObstacleCooling = (now - lastObstacleJoltTime < 280);
+                const isObstacleCooling = (now - lastObstacleJoltTime < 300);
 
-                const isSuddenLiftTrigger = !sensorData.isLifted && !isObstacleCooling && (
+                const isSuddenLiftTrigger = heightReactionEnabled && !sensorData.isLifted && !isObstacleCooling && (
                     // Persistent upward acceleration & velocity sustained over duration window
-                    (sustainedUpwardDurationMs >= (isActivelyMoving ? 240 : 180) && vertAccel > (isActivelyMoving ? 3.4 : 2.4) && sensorData.verticalVel > (isActivelyMoving ? 0.38 : 0.26)) ||
+                    (sustainedUpwardDurationMs >= (isActivelyMoving ? 280 : 200) && vertAccel > (isActivelyMoving ? 4.2 : 3.2) && sensorData.verticalVel > (isActivelyMoving ? 0.45 : 0.32)) ||
                     // Extreme high-g snatch / rapid human pickup
-                    (vertAccel > 5.2 && sustainedUpwardDurationMs >= 120 && sensorData.verticalVel > 0.45)
+                    (vertAccel > 6.0 && sustainedUpwardDurationMs >= 140 && sensorData.verticalVel > 0.50)
                 );
 
-                const isHeightLiftTrigger = !sensorData.isLifted && !isObstacleCooling && (
+                const isHeightLiftTrigger = heightReactionEnabled && !sensorData.isLifted && !isObstacleCooling && (
                     // Sustained physical displacement in air without immediate ground impact
-                    sustainedHeightDurationMs >= (isActivelyMoving ? 350 : 250) &&
-                    sensorData.heightCm > (isActivelyMoving ? 12.0 : 8.5) &&
-                    (sensorData.verticalVel > 0.10 || vertAccel > 0.3)
+                    sustainedHeightDurationMs >= (isActivelyMoving ? 400 : 300) &&
+                    sensorData.heightCm > (isActivelyMoving ? 20.0 : 15.0) &&
+                    (sensorData.verticalVel > 0.12 || vertAccel > 0.4)
                 );
 
                 if (isSuddenLiftTrigger) {
@@ -6486,8 +6582,8 @@ ${getActiveMemoriesPrompt()}`;
                 } else if (sensorData.isLifted) {
                     // Touchdown / Return to Ground detection
                     const isTouchdown = (
-                        (sensorData.heightCm <= 3.0 && vertAccel < 0.5) ||
-                        (now - sensorData.lastLiftT > 900 && mag < 0.38 && Math.abs(vertAccel) < 0.28 && sensorData.heightCm <= 4.5)
+                        (sensorData.heightCm <= 6.0 && vertAccel < 0.8) ||
+                        (now - sensorData.lastLiftT > 700 && mag < 0.50 && Math.abs(vertAccel) < 0.40 && sensorData.heightCm <= 8.0)
                     );
                     if (isTouchdown) {
                         handleGroundReturn();
@@ -8441,6 +8537,13 @@ ${getActiveMemoriesPrompt()}`;
                 setEmotion('EXCITED');
                 setAura('aura-warm', 6000);
                 log("🤖 [Autonomous Sentience] Mode ENABLED.", "AI");
+
+                // Immediately kick off the first cycle after speech intro finishes
+                setTimeout(() => {
+                    if (autonomousSentientMode && !sensorData.isLifted && !isTalking && !isSleeping) {
+                        runAutonomousSentientCycle(true);
+                    }
+                }, 2200);
             } else {
                 stopAutonomousSentientLoop();
                 playSound('blip');
@@ -8455,8 +8558,12 @@ ${getActiveMemoriesPrompt()}`;
             if (autonomousSentientTimer) clearInterval(autonomousSentientTimer);
             autonomousSentientTimer = setInterval(() => {
                 if (!autonomousSentientMode) return;
-                runAutonomousSentientCycle();
-            }, 9000);
+                // Watchdog reset if stuck
+                if (isPerformingSentientCycle && (Date.now() - lastSentientVocalizationTime > 15000)) {
+                    isPerformingSentientCycle = false;
+                }
+                runAutonomousSentientCycle(false);
+            }, 8000);
         }
 
         function stopAutonomousSentientLoop() {
@@ -8467,18 +8574,18 @@ ${getActiveMemoriesPrompt()}`;
             isPerformingSentientCycle = false;
         }
 
-        async function runAutonomousSentientCycle() {
-            if (!autonomousSentientMode || !isBooted || isSleeping || isTalking || isSttListening || isHoldingVoice || isPerformingSentientCycle || isLifted) return;
+        async function runAutonomousSentientCycle(forceFirst = false) {
+            if (!autonomousSentientMode || !isBooted || isSleeping || isTalking || isSttListening || isHoldingVoice || isPerformingSentientCycle || sensorData.isLifted) return;
 
             const now = Date.now();
             const timeSinceUser = now - lastUserInteractionTime;
             const timeSinceVoc = now - lastSentientVocalizationTime;
 
-            // Respect user focus: wait for idle stillness
-            if (timeSinceUser < 6000 || timeSinceVoc < 11000) return;
+            // Respect user focus: wait 2.5s of stillness after typing/touch, and 6.5s between vocalizations (unless forced initial start)
+            if (!forceFirst && (timeSinceUser < 2500 || timeSinceVoc < 6500)) return;
 
-            // Only act when physically upright and grounded
-            if (bodyOrientation !== 'UPRIGHT') return;
+            // Only block if upside-down or face down on a flat surface
+            if (bodyOrientation === 'UPSIDE_DOWN' || bodyOrientation === 'FACE_DOWN') return;
 
             isPerformingSentientCycle = true;
             lastSentientVocalizationTime = now;
@@ -9314,6 +9421,9 @@ ${getActiveMemoriesPrompt()}`;
             const checkY = document.getElementById('check-invert-gaze-y');
             if (checkX) checkX.checked = invertGazeX;
             if (checkY) checkY.checked = invertGazeY;
+            const checkHeight = document.getElementById('check-enable-height-reaction');
+            if (checkHeight) checkHeight.checked = heightReactionEnabled;
+            try { updateSettingsHeightBadge(); } catch (e) { }
             try { populateTtsVoices(); } catch (e) { }
             try { renderMemoryUI(); } catch (e) { }
             try { renderPersonalityUI(); } catch (e) { }
@@ -9498,6 +9608,7 @@ ${getActiveMemoriesPrompt()}`;
             curiosityEngineActive = document.getElementById('check-enable-curiosity')?.checked !== false;
             autowalkActive = document.getElementById('check-enable-autowalk')?.checked !== false;
             wanderActive = document.getElementById('check-enable-wander')?.checked !== false;
+            heightReactionEnabled = document.getElementById('check-enable-height-reaction')?.checked !== false;
             cocoVisionEnabled = document.getElementById('check-enable-coco')?.checked || false;
             faceRecognitionEnabled = document.getElementById('check-enable-face-id')?.checked || false;
             invertGazeX = document.getElementById('check-invert-gaze-x')?.checked || false;
@@ -9701,6 +9812,7 @@ ${getActiveMemoriesPrompt()}`;
                 if (document.getElementById('check-enable-curiosity')) document.getElementById('check-enable-curiosity').checked = curiosityEngineActive;
                 if (document.getElementById('check-enable-autowalk')) document.getElementById('check-enable-autowalk').checked = autowalkActive;
                 if (document.getElementById('check-enable-wander')) document.getElementById('check-enable-wander').checked = wanderActive;
+                if (document.getElementById('check-enable-height-reaction')) document.getElementById('check-enable-height-reaction').checked = heightReactionEnabled;
                 if (document.getElementById('check-enable-coco')) document.getElementById('check-enable-coco').checked = cocoVisionEnabled;
                 if (document.getElementById('slider-coco-thresh')) document.getElementById('slider-coco-thresh').value = Math.round(cocoThreshold * 100);
                 if (document.getElementById('coco-thresh-val')) document.getElementById('coco-thresh-val').innerText = `${Math.round(cocoThreshold * 100)}%`;
@@ -9709,6 +9821,8 @@ ${getActiveMemoriesPrompt()}`;
                 if (document.getElementById('slider-face-thresh')) document.getElementById('slider-face-thresh').value = Math.round(faceMatchThreshold * 100);
                 if (document.getElementById('face-thresh-val')) document.getElementById('face-thresh-val').innerText = `${faceMatchThreshold.toFixed(2)} (${faceMatchThreshold <= 0.50 ? 'Strict' : faceMatchThreshold <= 0.60 ? 'Optimal' : 'Lenient'})`;
             } catch (e) { }
+
+            try { updateSettingsHeightBadge(); } catch (e) { }
 
             try { updateReflexDisplay(); } catch (e) { }
             try { renderPersonalityUI(); } catch (e) { }
