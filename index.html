@@ -1,11 +1,11 @@
 <!-- 
-  BES Living Robot Core | Version: 4.1.1
+  BES Living Robot Core | Version: 4.1.2
   Change Log:
+  [Sep 01, 2026 10:50 AM] Fix: Replaced input field with non-credential textarea and disabled autocomplete to prevent browser account login popup.
   [Sep 01, 2026 10:45 AM] Fix: Decoupled getUserMedia from SpeechRecognition (removed mic hardware lock), imported MIGO STT sanitizer and dual-timer silence engine.
   [Aug 27, 2026 02:00 PM] Feature: Auto camera switching + monocular depth obstacle avoidance — back camera activates automatically during locomotion; MiDaS-lite depth engine halts movement when obstacles detected too close. (BESv2)
   [Aug 27, 2026 07:37 AM] Feature: 1-shot face registration at first-boot introduction — BES counts down, captures face embedding, and greets user by name on sight.
   [Aug 27, 2026 07:30 AM] Fix+Feature: Mic spectrum visualizer, STT mobile fix, selfie-cam gaze inversion fix, TARS/ape D-Pad gaits, awakening overlap guard + self-intro step, expanded touch dialogue, back buttons on control pages.
-  [Aug 22, 2026 10:34 PM] Fix: Removed manual right leg inversion from Puppet Mode since it is now handled identically across all modes directly by the ESP32 hardware driver.
 -->
 
 <!DOCTYPE html>
@@ -725,9 +725,9 @@
                 </button>
             </div>
 
-            <!-- Prompt Input Input Field -->
-            <input type="text" id="input-prompt-bar" name="chat_prompt_input_random" placeholder="Ask BES anything..." autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" spellcheck="true" data-form-type="other"
-                class="flex-1 min-w-0 bg-slate-950 border border-slate-700/80 focus:border-teal-400 rounded-xl px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none transition-colors shadow-inner h-11 xs:h-12">
+            <!-- Prompt Textarea Field (MIGO-style, prevents account login popup) -->
+            <textarea id="input-prompt-bar" rows="1" placeholder="Ask BES anything..." autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" data-lpignore="true" data-1p-ignore="true"
+                class="flex-1 min-w-0 bg-slate-950 border border-slate-700/80 focus:border-teal-400 rounded-xl px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none transition-colors shadow-inner h-11 xs:h-12 resize-none overflow-y-hidden leading-snug"></textarea>
 
             <!-- Send Button -->
             <button id="btn-send-prompt" onclick="submitPrompt()" class="px-3 xs:px-4 h-11 xs:h-12 bg-teal-500 hover:bg-teal-400 active:scale-95 text-slate-950 text-sm font-black rounded-xl cursor-pointer flex items-center justify-center gap-1.5 transition-all flex-shrink-0 shadow-md shadow-teal-500/20">
@@ -1217,7 +1217,7 @@
                 <div class="space-y-1.5" id="gemini-key-group">
                     <label class="block text-xs font-bold text-slate-300">Google Gemini API Key</label>
                     <div class="flex gap-2">
-                        <input type="password" id="input-api-key" placeholder="AIzaSy..." 
+                        <input type="password" id="input-api-key" placeholder="AIzaSy..." autocomplete="off" name="gemini_secret_api_key_custom"
                             class="flex-1 bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-teal-400 font-mono-code">
                         <button id="btn-test-key" onclick="testApiKey()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-teal-300 text-xs font-bold rounded-xl border border-slate-700 cursor-pointer">
                             Test Key
@@ -1424,7 +1424,7 @@
                     <!-- Enroll Face Button & Inline Name Input -->
                     <div class="space-y-2 pt-1 border-t border-slate-800/80">
                         <div class="flex gap-2 items-center">
-                            <input type="text" id="input-enroll-name" placeholder="Person's Name (e.g. Alex, Maya)..." maxlength="24"
+                            <input type="text" id="input-enroll-name" placeholder="Person's Name (e.g. Alex, Maya)..." maxlength="24" autocomplete="off"
                                 class="flex-1 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-emerald-400">
                             <button id="btn-enroll-face" onclick="enrollCurrentFace()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer transition-all shadow shadow-emerald-600/30 whitespace-nowrap">
                                 <i class="ph-bold ph-camera text-sm"></i>
@@ -1498,7 +1498,7 @@
 
                     <!-- Memory Search & Add -->
                     <div class="flex gap-2 flex-shrink-0">
-                        <input type="text" id="input-new-memory" placeholder="Add fact (e.g., 'User likes chiptune music')..." 
+                        <input type="text" id="input-new-memory" placeholder="Add fact (e.g., 'User likes chiptune music')..." autocomplete="off"
                             class="flex-1 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-purple-400 font-mono-code">
                         <button id="btn-add-memory" onclick="handleAddMemoryClick()" class="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 active:scale-95 text-white text-xs font-bold rounded-xl cursor-pointer shadow flex items-center gap-1">
                             <i class="ph-bold ph-plus"></i> Add
@@ -1554,7 +1554,7 @@
 
                     <div class="space-y-1">
                         <label class="block text-[11px] font-bold text-slate-400">BLE Device Name Filter (optional)</label>
-                        <input type="text" id="input-ble-name" placeholder="e.g. BES_Legs or leave blank for any" 
+                        <input type="text" id="input-ble-name" placeholder="e.g. BES_Legs or leave blank for any" autocomplete="off"
                             class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-400 font-mono-code">
                     </div>
 
@@ -1586,7 +1586,7 @@
 
                     <!-- Manual Command Send -->
                     <div class="flex gap-2">
-                        <input type="text" id="input-ble-cmd" placeholder="Send raw command (e.g. LEG:L:90)" 
+                        <input type="text" id="input-ble-cmd" placeholder="Send raw command (e.g. LEG:L:90)" autocomplete="off"
                             class="flex-1 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-400 font-mono-code">
                         <button id="btn-ble-send" onclick="sendManualBleCommand()" class="px-3 py-2 bg-slate-700 hover:bg-blue-600 active:scale-95 text-slate-200 text-xs font-bold rounded-xl cursor-pointer transition-all">
                             Send
@@ -1607,7 +1607,7 @@
                     <div class="space-y-2">
                         <div class="flex items-center gap-2">
                             <span class="text-xs font-mono-code font-bold text-teal-400 bg-slate-900 border border-slate-700/80 px-2.5 py-2 rounded-xl select-none">BES_</span>
-                            <input type="text" id="input-ble-rename" placeholder="e.g. BipedBot" maxlength="10"
+                            <input type="text" id="input-ble-rename" placeholder="e.g. BipedBot" maxlength="10" autocomplete="off"
                                 oninput="updateBleRenameCharCount(this.value)"
                                 class="flex-1 min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-400 font-mono-code font-bold">
                         </div>
