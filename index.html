@@ -703,8 +703,8 @@
                 </button>
 
 
-                <!-- Microphone Voice Input Button (Hold to Talk / Tap to Toggle Listen) -->
-                <button id="btn-voice-bar" class="flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm select-none relative overflow-hidden" title="Hold to Talk | Tap to Toggle Listen (Hold 2s to Disable)">
+                <!-- Microphone Voice Input Button (Tap to Talk) -->
+                <button id="btn-voice-bar" class="flex flex-col items-center justify-center w-11 xs:w-12 h-11 xs:h-12 px-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700/80 rounded-xl text-slate-200 cursor-pointer transition-all flex-shrink-0 shadow-sm select-none relative overflow-hidden" title="Tap to Talk (Auto-submits after 6s of silence)">
                     <!-- Mic Spectrum Visualizer Canvas (behind icon) -->
                     <canvas id="mic-spectrum-canvas" width="48" height="48" class="absolute inset-0 w-full h-full opacity-0 transition-opacity duration-300 pointer-events-none rounded-xl" style="mix-blend-mode: screen;"></canvas>
                     <i id="icon-voice-bar" class="ph-bold ph-microphone text-teal-400 text-base xs:text-lg pointer-events-none relative z-10"></i>
@@ -5778,7 +5778,7 @@ ${getActiveMemoriesPrompt()}`;
                 if (nativeSpeechRec) {
                     try { nativeSpeechRec.stop(); } catch(e){}
                 }
-            }, 2500); // Wait 2.5s of silence before auto-submitting
+            }, 6000); // Wait 6.0s of silence before auto-submitting
         }
 
         function emergencyStop() {
@@ -5806,7 +5806,7 @@ ${getActiveMemoriesPrompt()}`;
         }
 
         function startWakeWordScanner() {
-            if (isMicDisabled || !wakeScannerActive || !isBooted || isSleeping || isTalking || isHoldingVoice || listenModeActive) return;
+            if (isMicDisabled || !wakeScannerActive || !isBooted || isSleeping || isTalking || isHoldingVoice || listenModeActive || isSttListening) return;
             const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRec) return;
 
@@ -5868,7 +5868,7 @@ ${getActiveMemoriesPrompt()}`;
 
                 wakeRecognition.onend = () => {
                     wakeRecognition = null;
-                    if (wakeScannerActive && isBooted && !isSleeping && !isTalking && !isHoldingVoice && !listenModeActive) {
+                    if (wakeScannerActive && isBooted && !isSleeping && !isTalking && !isHoldingVoice && !listenModeActive && !isSttListening) {
                         setTimeout(startWakeWordScanner, 300);
                     }
                 };
@@ -8703,63 +8703,17 @@ ${getActiveMemoriesPrompt()}`;
 
                 const btnVoiceBar = document.getElementById('btn-voice-bar');
                 if (btnVoiceBar) {
-                    let voiceHoldTimer = null;
-                    let autoListen2sTriggered = false;
-                    let isPressingVoice = false;
-                    let voicePressStartTime = 0;
-
-                    btnVoiceBar.addEventListener('pointerdown', (e) => {
-                        if (e.button !== undefined && e.button !== 0) return;
-                        isPressingVoice = true;
-                        autoListen2sTriggered = false;
-                        voicePressStartTime = Date.now();
-                        try { btnVoiceBar.setPointerCapture(e.pointerId); } catch(err){}
-
-                        if (voiceHoldTimer) clearTimeout(voiceHoldTimer);
-                        
-                        // 2-Second Hold: Toggles Auto-Listen ON/OFF
-                        voiceHoldTimer = setTimeout(() => {
-                            if (isPressingVoice) {
-                                autoListen2sTriggered = true;
-                                toggleAutoListenMode();
+                    btnVoiceBar.addEventListener('click', (e) => {
+                        registerUserInteraction();
+                        if (isSttListening || isHoldingVoice) {
+                            if (nativeSpeechRec) {
+                                try { nativeSpeechRec.stop(); } catch(err){}
                             }
-                        }, 2000);
-
-                        if (!autoListenActive) {
-                            startVoiceHold();
+                            isHoldingVoice = false;
+                        } else {
+                            startActiveSpeechRecognition();
                         }
                     });
-
-                    const onVoiceEnd = (e) => {
-                        if (!isPressingVoice) return;
-                        isPressingVoice = false;
-                        try { btnVoiceBar.releasePointerCapture(e.pointerId); } catch(err){}
-
-                        if (voiceHoldTimer) {
-                            clearTimeout(voiceHoldTimer);
-                            voiceHoldTimer = null;
-                        }
-
-                        const duration = Date.now() - voicePressStartTime;
-
-                        if (autoListen2sTriggered) {
-                            isHoldingVoice = false;
-                            updateMicUI();
-                        } else {
-                            if (autoListenActive) {
-                                // Quick tap when Auto-Listen is ON -> toggles Auto-Listen OFF
-                                if (duration < 600) {
-                                    toggleAutoListenMode();
-                                }
-                            } else {
-                                endVoiceHold();
-                            }
-                        }
-                        autoListen2sTriggered = false;
-                    };
-
-                    btnVoiceBar.addEventListener('pointerup', onVoiceEnd);
-                    btnVoiceBar.addEventListener('pointercancel', onVoiceEnd);
                 }
 
                 const btnWakeBar = document.getElementById('btn-wake-bar');
