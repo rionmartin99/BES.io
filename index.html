@@ -5817,7 +5817,7 @@ ${getActiveMemoriesPrompt()}`;
 
             try {
                 wakeRecognition = new SpeechRec();
-                wakeRecognition.continuous = false;
+                wakeRecognition.continuous = true;
                 wakeRecognition.interimResults = true;
                 wakeRecognition.lang = 'en-US';
 
